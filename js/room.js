@@ -159,7 +159,7 @@
       createdAt:     now,
     });
 
-    const avatarId = document.getElementById('selected-avatar-id')?.value || 'chetan-meesha';
+    const avatarId = document.getElementById('selected-avatar-id')?.value || 'fox';
 
     await db.ref('rooms/' + code + '/players/' + playerId).set({
       name,
@@ -210,7 +210,7 @@
       return;
     }
 
-    const avatarId = document.getElementById('selected-avatar-id')?.value || 'chetan-meesha';
+    const avatarId = document.getElementById('selected-avatar-id')?.value || 'fox';
 
     await db.ref('rooms/' + rawCode + '/players/' + playerId).set({
       name,

@@ -310,7 +310,6 @@ function initGame() {
       console.error('Error in renderArena:', renderErr);
     }
   }
-  }
 
   // ──────────────────────────────────────────────────────────
   // FETCH WORD & ROLE (Clean Secret Card)
