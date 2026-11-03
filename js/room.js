@@ -5,16 +5,16 @@
 (function () {
   'use strict';
 
-  // ── Init Kerala Avatar Picker ────────────────────────────────
+  // ── Init Animal Avatar Picker ────────────────────────────────
   function initAvatarPicker() {
     const container = document.getElementById('avatar-picker');
-    if (!container || typeof KERALA_AVATARS === 'undefined') return;
+    if (!container || typeof ANIMAL_AVATARS === 'undefined') return;
 
-    let savedAvatar = localStorage.getItem('syncroom_avatar') || KERALA_AVATARS[0].id;
+    let savedAvatar = localStorage.getItem('syncroom_avatar') || ANIMAL_AVATARS[0].id;
     document.getElementById('selected-avatar-id').value = savedAvatar;
 
     container.innerHTML = '';
-    KERALA_AVATARS.forEach(avatar => {
+    ANIMAL_AVATARS.forEach(avatar => {
       const el = document.createElement('div');
       el.className = 'avatar-choice-item' + (avatar.id === savedAvatar ? ' selected' : '');
       el.title = avatar.name;

@@ -4,15 +4,15 @@
 (function () {
   'use strict';
 
-  // ── Safe Avatar Svg Getter (Fallback immune to load order) ─
+  // ── Safe Avatar Svg Getter (Flat Gaming Animal Avatars) ───
   function getSafeAvatarSvg(avatarId) {
     if (typeof getAvatarSvg === 'function') {
       try { return getAvatarSvg(avatarId); } catch (e) {}
     }
-    if (typeof KERALA_AVATARS !== 'undefined' && Array.isArray(KERALA_AVATARS)) {
-      const match = KERALA_AVATARS.find(a => a.id === avatarId);
+    if (typeof ANIMAL_AVATARS !== 'undefined' && Array.isArray(ANIMAL_AVATARS)) {
+      const match = ANIMAL_AVATARS.find(a => a.id === avatarId);
       if (match) return match.svg;
-      if (KERALA_AVATARS[0]) return KERALA_AVATARS[0].svg;
+      if (ANIMAL_AVATARS[0]) return ANIMAL_AVATARS[0].svg;
     }
     // Universal SVG fallback
     return `<svg viewBox="0 0 100 100" fill="#6366F1"><circle cx="50" cy="50" r="48" fill="#EEF2FF"/><circle cx="50" cy="40" r="20" fill="#6366F1"/><ellipse cx="50" cy="80" rx="30" ry="20" fill="#6366F1"/></svg>`;
@@ -86,10 +86,10 @@
   // ── Setup Lobby Profile & Avatar Picker ───────────────────
   function setupLobbyAvatarPicker() {
     const container = document.getElementById('lobby-avatar-picker');
-    if (!container || typeof KERALA_AVATARS === 'undefined') return;
+    if (!container || typeof ANIMAL_AVATARS === 'undefined') return;
 
     const myPlayer = currentRoom?.players?.[PLAYER_ID];
-    const myCurrentAvatar = myPlayer?.avatar || localStorage.getItem('syncroom_avatar') || KERALA_AVATARS[0].id;
+    const myCurrentAvatar = myPlayer?.avatar || localStorage.getItem('syncroom_avatar') || ANIMAL_AVATARS[0].id;
 
     // Pre-fill name input
     const nameInput = document.getElementById('lobby-edit-name-input');
@@ -98,7 +98,7 @@
     }
 
     container.innerHTML = '';
-    KERALA_AVATARS.forEach(avatar => {
+    ANIMAL_AVATARS.forEach(avatar => {
       const el = document.createElement('div');
       el.className = 'avatar-choice-item' + (avatar.id === myCurrentAvatar ? ' selected' : '');
       el.title = avatar.name;
@@ -322,7 +322,7 @@
   }
 
   // ──────────────────────────────────────────────────────────
-  // FETCH WORD & ROLE (Completely Hidden Roles in Similar Mode!)
+  // FETCH WORD & ROLE (Clean Secret Card)
   // ──────────────────────────────────────────────────────────
   async function fetchMyWordAndRole() {
     if (myWord !== null) return;
@@ -336,28 +336,19 @@
     const roleTag    = document.getElementById('arena-role-tag');
     const revealedTag = document.getElementById('arena-revealed-tag');
 
-    // Default: Hide all role tags for ultimate suspense!
     roleTag.className = 'role-badge-tag hidden';
     roleTag.textContent = '';
-    revealedTag.textContent = 'YOUR SECRET WORD';
 
-    const isBlindMode = currentRoom && currentRoom.imposterMode === 'blind';
-
-    if (myRole === 'imposter' && isBlindMode) {
-      // ONLY in Blind Mode does the imposter see this!
+    if (myRole === 'imposter') {
       revealedTag.textContent = 'YOUR ROLE';
       wordTextEl.textContent = 'IMPOSTER';
       wordTextEl.style.color = 'var(--danger)';
-      wordEnEl.textContent = 'You have NO word! Blend in & fake your clues.';
-      roleTag.className = 'role-badge-tag imposter';
-      roleTag.textContent = '🕵️ BLIND IMPOSTER';
+      wordEnEl.textContent = 'You have NO word! Fake your clues & blend in.';
     } else {
-      // In Similar Mode (or for regular players): Just show the word!
-      // NO ONE knows if they are the imposter or a regular player!
-      const { word, wordEn } = parseWord(myWord || '');
-      wordTextEl.textContent = word;
+      revealedTag.textContent = 'YOUR SECRET WORD';
+      wordTextEl.textContent = myWord || '–';
       wordTextEl.style.color = 'var(--text)';
-      wordEnEl.textContent   = wordEn;
+      wordEnEl.textContent = '';
     }
   }
 
@@ -449,18 +440,10 @@
     document.getElementById('reveal-verdict').textContent = results.wasImposter
       ? '🕵️ Was the Imposter!' : '✅ Was NOT the Imposter';
 
-    const pair = results.wordId ? getWordPairById(results.wordId) : null;
+    const pair = results.wordId ? getWordById(results.wordId) : null;
     if (pair) {
-      document.getElementById('result-main-word').innerHTML =
-        `${pair.main} <span style="font-size:.75rem;font-weight:400;color:var(--text-muted)">(${pair.mainEn})</span>`;
-      
-      if (room.imposterMode === 'blind') {
-        document.getElementById('result-imposter-word').innerHTML =
-          `<em>None (Blind Imposter)</em>`;
-      } else {
-        document.getElementById('result-imposter-word').innerHTML =
-          `${pair.imposter} <span style="font-size:.75rem;font-weight:400;color:var(--text-muted)">(${pair.imposterEn})</span>`;
-      }
+      document.getElementById('result-main-word').innerHTML = pair.word;
+      document.getElementById('result-imposter-word').innerHTML = `<em>No Word (Blind Imposter)</em>`;
     }
 
     const scoreChanges = results.scoreChanges || {};
@@ -518,8 +501,8 @@
     const modeRadio = document.querySelector('input[name="imposter-mode"]:checked');
     const imposterMode = modeRadio ? modeRadio.value : 'similar'; // 'similar' or 'blind'
 
-    // Pick Word Pair using selected Category
-    const pair = pickNextWordPair(ROOM_CODE, selectedCategory);
+    // Pick Word using selected Category from new JSON format
+    const pickedWordObj = pickNextWord(ROOM_CODE, selectedCategory);
     const round = (currentRoom.round || 0) + 1;
 
     // Imposter calculation
@@ -537,15 +520,9 @@
       rolesUpdate[p.id] = isImposter ? 'imposter' : 'player';
 
       if (isImposter) {
-        if (imposterMode === 'blind') {
-          // Blind Imposter gets NO word
-          wordsUpdate[p.id] = "YOU ARE THE IMPOSTER (No Word Given)";
-        } else {
-          // Similar word
-          wordsUpdate[p.id] = pair.imposter + ' (' + pair.imposterEn + ')';
-        }
+        wordsUpdate[p.id] = "YOU ARE THE IMPOSTER";
       } else {
-        wordsUpdate[p.id] = pair.main + ' (' + pair.mainEn + ')';
+        wordsUpdate[p.id] = pickedWordObj.word;
       }
     });
 
@@ -565,8 +542,8 @@
       totalClueRounds:  TOTAL_DEFAULT_ROUNDS,
       turnOrder,
       currentTurnIndex: 0,
-      currentWordId:    pair.id,
-      imposterMode,
+      currentWordId:    pickedWordObj.id,
+      currentWordText:  pickedWordObj.word,
       typingPlayerId:   null,
     });
   }
