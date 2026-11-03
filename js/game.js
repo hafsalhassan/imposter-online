@@ -77,7 +77,7 @@
 
   // ── Render ───────────────────────────────────────────────
   function render(room) {
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    if (!room || !room.state) return;
 
     switch (room.state) {
       case 'lobby':        renderLobby(room);       break;
@@ -811,8 +811,15 @@
   // UTILITIES
   // ────────────────────────────────────────────────────────
   function showScreen(name) {
+    document.querySelectorAll('.screen').forEach(s => {
+      s.classList.remove('active');
+      s.classList.add('hidden');
+    });
     const el = document.getElementById('screen-' + name);
-    if (el) el.classList.add('active');
+    if (el) {
+      el.classList.remove('hidden');
+      el.classList.add('active');
+    }
   }
 
   function objectToArray(obj) {
