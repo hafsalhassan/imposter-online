@@ -540,3 +540,47 @@
   font-weight: 600;
   border: 1px solid #FDE68A;
 }
+
+/* ── Imposter Mode Selector Cards ──────────────────────── */
+.mode-toggle-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.mode-radio-label {
+  cursor: pointer;
+  display: block;
+}
+.mode-radio-label input[type="radio"] {
+  display: none;
+}
+.mode-card {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  transition: all .15s ease;
+  height: 100%;
+}
+.mode-radio-label input[type="radio"]:checked + .mode-card {
+  border-color: var(--accent);
+  background: #EEF2FF;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.mode-icon {
+  font-size: 1.25rem;
+  margin-bottom: 4px;
+}
+.mode-title {
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.mode-desc {
+  font-size: .7rem;
+  color: var(--text-sub);
+  margin-top: 4px;
+  line-height: 1.3;
+}

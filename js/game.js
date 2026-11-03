@@ -82,7 +82,7 @@ function initGame() {
         const savedName = localStorage.getItem('syncroom_name');
         if (savedName && currentRoom.state === 'lobby') {
           const savedAvatar = localStorage.getItem('syncroom_avatar') || 'fox';
-          await db.ref(roomPath('players/' + PLAYER_ID)).set({
+          await db.ref(roomPath('players/' + PLAYER_ID)).update({
             name: savedName,
             avatar: savedAvatar,
             score: 0,
@@ -121,55 +121,6 @@ function initGame() {
     });
   }
 
-  // ── Setup Lobby Profile & Avatar Picker ───────────────────
-  function setupLobbyAvatarPicker() {
-    const container = document.getElementById('lobby-avatar-picker');
-    if (!container || typeof ANIMAL_AVATARS === 'undefined') return;
-
-    const myPlayer = currentRoom?.players?.[PLAYER_ID];
-    const myCurrentAvatar = myPlayer?.avatar || localStorage.getItem('syncroom_avatar') || ANIMAL_AVATARS[0].id;
-
-    // Pre-fill name input
-    const nameInput = document.getElementById('lobby-edit-name-input');
-    if (nameInput && myPlayer?.name && !nameInput.value) {
-      nameInput.value = myPlayer.name;
-    }
-
-    if (container.children.length === 0) {
-      container.innerHTML = '';
-      ANIMAL_AVATARS.forEach(avatar => {
-        const el = document.createElement('div');
-        el.className = 'avatar-choice-item' + (avatar.id === myCurrentAvatar ? ' selected' : '');
-        el.dataset.avatarId = avatar.id;
-        el.title = avatar.name;
-        el.innerHTML = avatar.svg;
-        el.addEventListener('click', async () => {
-          document.querySelectorAll('#lobby-avatar-picker .avatar-choice-item').forEach(i => i.classList.remove('selected'));
-          el.classList.add('selected');
-          localStorage.setItem('syncroom_avatar', avatar.id);
-          await dbUpdate(roomPath('players/' + PLAYER_ID), { avatar: avatar.id });
-        });
-        container.appendChild(el);
-      });
-    } else {
-      container.querySelectorAll('.avatar-choice-item').forEach(el => {
-        el.classList.toggle('selected', el.dataset.avatarId === myCurrentAvatar);
-      });
-    }
-  }
-
-  async function saveEditedName() {
-    const nameInput = document.getElementById('lobby-edit-name-input');
-    const newName = nameInput.value.trim();
-    if (!newName) {
-      showToast('Name cannot be empty', 'warning');
-      return;
-    }
-    localStorage.setItem('syncroom_name', newName);
-    await dbUpdate(roomPath('players/' + PLAYER_ID), { name: newName });
-    showToast('Name updated!', 'success');
-  }
-
   function showScreen(name) {
     document.querySelectorAll('.screen').forEach(s => {
       s.classList.remove('active');
@@ -200,7 +151,6 @@ function initGame() {
   // ──────────────────────────────────────────────────────────
   function renderLobby(room) {
     showScreen('lobby');
-    setupLobbyAvatarPicker();
 
     const players   = room.players || {};
     const playerArr = objectToArray(players);
@@ -212,6 +162,12 @@ function initGame() {
     // Host exclusive controls
     const hostPanel = document.getElementById('host-exclusive-panel');
     if (hostPanel) hostPanel.classList.toggle('hidden', !isHost);
+
+    // Sync Imposter Mode Radio
+    if (room.imposterMode) {
+      const modeRadio = document.querySelector(`input[name="imposter-mode"][value="${room.imposterMode}"]`);
+      if (modeRadio) modeRadio.checked = true;
+    }
 
     document.getElementById('host-start-wrap').classList.toggle('hidden', !isHost);
     document.getElementById('guest-waiting').classList.toggle('hidden', isHost);
@@ -305,7 +261,7 @@ function initGame() {
         stripEl.appendChild(chip);
       });
 
-      // Render Clues in Chat
+      // Render Clues in Chat with Player Avatars
       const chatEl = document.getElementById('clue-chat-messages');
       const rawClues = room.clues || [];
       const clues = Array.isArray(rawClues) ? rawClues : Object.values(rawClues);
@@ -316,10 +272,15 @@ function initGame() {
         clues.forEach(c => {
           const bubble = document.createElement('div');
           const isMine = c.playerId === PLAYER_ID;
+          const senderPlayer = players[c.playerId] || {};
+          const senderAvatar = c.avatar || senderPlayer.avatar || 'fox';
+          const avatarSvg = getSafeAvatarSvg(senderAvatar);
+
           bubble.className = 'clue-bubble ' + (isMine ? 'mine' : 'theirs');
           bubble.innerHTML = `
-            <div class="clue-sender-meta">
-              <span>${esc(c.playerName)}</span>
+            <div class="clue-sender-meta flex items-center gap-1 ${isMine ? 'justify-end' : ''}">
+              <div class="avatar-bubble" style="width:18px;height:18px;display:inline-flex">${avatarSvg}</div>
+              <span class="font-bold">${esc(c.playerName)}</span>
               <span>· Round ${c.round}</span>
             </div>
             <div class="clue-text">${esc(c.text)}</div>
@@ -329,11 +290,13 @@ function initGame() {
         chatEl.scrollTop = chatEl.scrollHeight;
       }
 
-      // Live typing indicator
+      // Live typing indicator with Avatar & 3-dot animation
       const typingBar = document.getElementById('typing-indicator-bar');
       const typingPlayerId = room.typingPlayerId;
       if (typingPlayerId && typingPlayerId !== PLAYER_ID && players[typingPlayerId]) {
         typingBar.classList.remove('hidden');
+        const typingAv = document.getElementById('typing-avatar');
+        if (typingAv) typingAv.innerHTML = getSafeAvatarSvg(players[typingPlayerId].avatar);
         document.getElementById('typing-player-name').textContent = `${players[typingPlayerId].name} is typing a clue...`;
       } else {
         typingBar.classList.add('hidden');
@@ -386,14 +349,27 @@ function initGame() {
       roleTag.textContent = '';
     }
 
-    if (myRole === 'imposter') {
-      if (revealedTag) revealedTag.textContent = 'YOUR ROLE';
-      if (wordTextEl) {
-        wordTextEl.textContent = 'IMPOSTER';
-        wordTextEl.style.color = 'var(--danger)';
+    const currentMode = currentRoom?.imposterMode || 'similar';
+
+    if (currentMode === 'blind') {
+      if (myRole === 'imposter') {
+        if (revealedTag) revealedTag.textContent = 'YOUR ROLE';
+        if (wordTextEl) {
+          wordTextEl.textContent = 'IMPOSTER';
+          wordTextEl.style.color = 'var(--danger)';
+        }
+        if (wordEnEl) wordEnEl.textContent = 'You have NO word! Blend in and guess.';
+      } else {
+        if (revealedTag) revealedTag.textContent = 'YOUR SECRET WORD';
+        if (wordTextEl) {
+          wordTextEl.textContent = myWord || '–';
+          wordTextEl.style.color = 'var(--text)';
+        }
+        if (wordEnEl) wordEnEl.textContent = '';
       }
-      if (wordEnEl) wordEnEl.textContent = 'You have NO word! Blend in and guess.';
     } else {
+      // SIMILAR WORD MODE:
+      // Roles are completely hidden so nobody knows who has which word!
       if (revealedTag) revealedTag.textContent = 'YOUR SECRET WORD';
       if (wordTextEl) {
         wordTextEl.textContent = myWord || '–';
@@ -500,7 +476,11 @@ function initGame() {
     const pair = results.wordId ? getWordById(results.wordId) : null;
     if (pair) {
       document.getElementById('result-main-word').innerHTML = pair.word;
-      document.getElementById('result-imposter-word').innerHTML = `<em>No Word (Blind Imposter)</em>`;
+      if (room.imposterMode === 'similar' && pair.similarWord) {
+        document.getElementById('result-imposter-word').innerHTML = pair.similarWord;
+      } else {
+        document.getElementById('result-imposter-word').innerHTML = `<em>No Word (Blind Imposter)</em>`;
+      }
     }
 
     const scoreChanges = results.scoreChanges || {};
@@ -559,6 +539,9 @@ function initGame() {
     const catSelect = document.getElementById('host-category-select');
     const selectedCategory = catSelect ? catSelect.value : 'ALL';
 
+    const modeRadio = document.querySelector('input[name="imposter-mode"]:checked');
+    const imposterMode = modeRadio ? modeRadio.value : (currentRoom.imposterMode || 'similar');
+
     // Pick Word using selected Category
     const pickedWordObj = pickNextWord(ROOM_CODE, selectedCategory);
     const round = (currentRoom.round || 0) + 1;
@@ -578,7 +561,11 @@ function initGame() {
       rolesUpdate[p.id] = isImposter ? 'imposter' : 'player';
 
       if (isImposter) {
-        wordsUpdate[p.id] = "YOU ARE THE IMPOSTER";
+        if (imposterMode === 'similar') {
+          wordsUpdate[p.id] = pickedWordObj.similarWord || pickedWordObj.word;
+        } else {
+          wordsUpdate[p.id] = "YOU ARE THE IMPOSTER";
+        }
       } else {
         wordsUpdate[p.id] = pickedWordObj.word;
       }
@@ -596,6 +583,7 @@ function initGame() {
     await dbUpdate(roomPath(), {
       state:            'arena',
       round,
+      imposterMode,
       clueRound:        1,
       totalClueRounds:  TOTAL_DEFAULT_ROUNDS,
       turnOrder,
@@ -634,6 +622,7 @@ function initGame() {
     const clueItem = {
       playerId:   PLAYER_ID,
       playerName: currentRoom.players[PLAYER_ID]?.name || 'Player',
+      avatar:     currentRoom.players[PLAYER_ID]?.avatar || 'fox',
       text,
       round:      currentRoom.clueRound || 1,
       timestamp:  Date.now(),
@@ -703,6 +692,17 @@ function initGame() {
     myRole = null;
     selectedVote = null;
     await dbUpdate(roomPath(), { state: 'lobby' });
+  }
+
+  async function leaveRoom() {
+    if (confirm('Are you sure you want to exit to the home page? You can rejoin anytime.')) {
+      if (ROOM_CODE && PLAYER_ID) {
+        try {
+          await dbSet(roomPath(`players/${PLAYER_ID}/isOnline`), false);
+        } catch (e) {}
+      }
+      window.location.href = 'index.html';
+    }
   }
 
   // Live typing broadcaster
@@ -863,22 +863,20 @@ function initGame() {
     const shareBtn = document.getElementById('btn-share');
     if (shareBtn) shareBtn.addEventListener('click', shareRoom);
 
+    const leaveBtn = document.getElementById('btn-leave-room');
+    if (leaveBtn) leaveBtn.addEventListener('click', leaveRoom);
+
     const startBtn = document.getElementById('btn-start');
     if (startBtn) startBtn.addEventListener('click', startGame);
 
-    // Save Name in Lobby
-    const saveNameBtn = document.getElementById('btn-save-name');
-    if (saveNameBtn) saveNameBtn.addEventListener('click', saveEditedName);
-
-    const lobbyNameInput = document.getElementById('lobby-edit-name-input');
-    if (lobbyNameInput) {
-      lobbyNameInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          saveEditedName();
+    // Imposter Mode Radios (Host switch syncs to Firebase)
+    document.querySelectorAll('input[name="imposter-mode"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        if (currentRoom?.hostId === PLAYER_ID) {
+          dbUpdate(roomPath(), { imposterMode: radio.value });
         }
       });
-    }
+    });
 
     // Skip Turn & Back to Lobby
     const skipBtn = document.getElementById('btn-host-skip-turn');
