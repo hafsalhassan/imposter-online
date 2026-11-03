@@ -1,17 +1,18 @@
 // Sync Room — Service Worker
 // Provides basic offline caching for the app shell
 
-const CACHE_NAME = 'syncroom-v1';
+const CACHE_NAME = 'syncroom-v2';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/game.html',
-  '/css/main.css',
-  '/css/game.css',
-  '/js/firebase-config.js',
-  '/js/words.js',
-  '/js/room.js',
-  '/js/game.js',
+  './',
+  './index.html',
+  './game.html',
+  './css/main.css',
+  './css/game.css',
+  './js/firebase-config.js',
+  './js/avatars.js',
+  './js/words.js',
+  './js/room.js',
+  './js/game.js',
 ];
 
 // Install: cache static assets

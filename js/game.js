@@ -58,7 +58,29 @@
     onlineRef.onDisconnect().set(false);
   }
 
-  // ── Master Screen Switcher ────────────────────────────────
+  // ── Setup Lobby Avatar Picker ──────────────────────────────
+  function setupLobbyAvatarPicker() {
+    const container = document.getElementById('lobby-avatar-picker');
+    if (!container || typeof KERALA_AVATARS === 'undefined') return;
+
+    const myCurrentAvatar = currentRoom?.players?.[PLAYER_ID]?.avatar || localStorage.getItem('syncroom_avatar') || KERALA_AVATARS[0].id;
+
+    container.innerHTML = '';
+    KERALA_AVATARS.forEach(avatar => {
+      const el = document.createElement('div');
+      el.className = 'avatar-choice-item' + (avatar.id === myCurrentAvatar ? ' selected' : '');
+      el.title = avatar.name;
+      el.innerHTML = avatar.svg;
+      el.addEventListener('click', async () => {
+        document.querySelectorAll('#lobby-avatar-picker .avatar-choice-item').forEach(i => i.classList.remove('selected'));
+        el.classList.add('selected');
+        localStorage.setItem('syncroom_avatar', avatar.id);
+        // Realtime update in Firebase!
+        await dbUpdate(roomPath('players/' + PLAYER_ID), { avatar: avatar.id });
+      });
+      container.appendChild(el);
+    });
+  }
   function showScreen(name) {
     document.querySelectorAll('.screen').forEach(s => {
       s.classList.remove('active');
@@ -89,6 +111,7 @@
   // ──────────────────────────────────────────────────────────
   function renderLobby(room) {
     showScreen('lobby');
+    setupLobbyAvatarPicker();
 
     const players   = room.players || {};
     const playerArr = objectToArray(players);
@@ -158,10 +181,12 @@
     const isHost = room.hostId === PLAYER_ID;
     document.getElementById('btn-host-force-vote').classList.toggle('hidden', !isHost);
 
-    // Setup Turn Order Strip
-    const order = room.turnOrder || [];
+    // Setup Turn Order Strip (Safe Array conversion)
+    const rawOrder = room.turnOrder || [];
+    const order = Array.isArray(rawOrder) ? rawOrder : Object.values(rawOrder);
     const players = room.players || {};
-    const currentTurnPlayerId = order[room.currentTurnIndex || 0];
+    const currentTurnIndex = Number(room.currentTurnIndex || 0);
+    const currentTurnPlayerId = order[currentTurnIndex];
 
     const stripEl = document.getElementById('turn-players-strip');
     stripEl.innerHTML = '';
@@ -170,7 +195,7 @@
       if (!p) return;
       const chip = document.createElement('div');
       const isCurrentTurn = pid === currentTurnPlayerId;
-      const isPastTurn    = idx < (room.currentTurnIndex || 0);
+      const isPastTurn    = idx < currentTurnIndex;
       const avatarSvg     = getAvatarSvg(p.avatar);
 
       chip.className = 'turn-chip' +
@@ -184,9 +209,10 @@
       stripEl.appendChild(chip);
     });
 
-    // Render Clues in Chat
+    // Render Clues in Chat (Safe Array conversion)
     const chatEl = document.getElementById('clue-chat-messages');
-    const clues = room.clues || [];
+    const rawClues = room.clues || [];
+    const clues = Array.isArray(rawClues) ? rawClues : Object.values(rawClues);
     if (clues.length === 0) {
       chatEl.innerHTML = `<div class="chat-empty">Round 1 beginning. Give a one-word or short clue about your secret word!</div>`;
     } else {
@@ -241,7 +267,7 @@
   }
 
   // ──────────────────────────────────────────────────────────
-  // FETCH WORD & ROLE
+  // FETCH WORD & ROLE (Completely Hidden Roles in Similar Mode!)
   // ──────────────────────────────────────────────────────────
   async function fetchMyWordAndRole() {
     if (myWord !== null) return;
@@ -255,26 +281,24 @@
     const roleTag    = document.getElementById('arena-role-tag');
     const revealedTag = document.getElementById('arena-revealed-tag');
 
-    if (myRole === 'imposter') {
-      roleTag.className = 'role-badge-tag imposter';
-      roleTag.textContent = '🕵️ YOU ARE THE IMPOSTER!';
+    // Default: Hide all role tags for ultimate suspense!
+    roleTag.className = 'role-badge-tag hidden';
+    roleTag.textContent = '';
+    revealedTag.textContent = 'YOUR SECRET WORD';
 
-      if (currentRoom && currentRoom.imposterMode === 'blind') {
-        revealedTag.textContent = 'YOUR ROLE';
-        wordTextEl.textContent = 'IMPOSTER';
-        wordTextEl.style.color = 'var(--danger)';
-        wordEnEl.textContent = 'Blend in! Try to guess what everyone is talking about.';
-      } else {
-        revealedTag.textContent = 'YOUR SECRET WORD';
-        const { word, wordEn } = parseWord(myWord || '');
-        wordTextEl.textContent = word;
-        wordTextEl.style.color = 'var(--text)';
-        wordEnEl.textContent   = wordEn;
-      }
+    const isBlindMode = currentRoom && currentRoom.imposterMode === 'blind';
+
+    if (myRole === 'imposter' && isBlindMode) {
+      // ONLY in Blind Mode does the imposter see this!
+      revealedTag.textContent = 'YOUR ROLE';
+      wordTextEl.textContent = 'IMPOSTER';
+      wordTextEl.style.color = 'var(--danger)';
+      wordEnEl.textContent = 'You have NO word! Blend in & fake your clues.';
+      roleTag.className = 'role-badge-tag imposter';
+      roleTag.textContent = '🕵️ BLIND IMPOSTER';
     } else {
-      revealedTag.textContent = 'YOUR SECRET WORD';
-      roleTag.className = 'role-badge-tag player';
-      roleTag.textContent = '👤 Regular Player';
+      // In Similar Mode (or for regular players): Just show the word!
+      // NO ONE knows if they are the imposter or a regular player!
       const { word, wordEn } = parseWord(myWord || '');
       wordTextEl.textContent = word;
       wordTextEl.style.color = 'var(--text)';
@@ -494,8 +518,10 @@
     const text  = input.value.trim();
     if (!text) return;
 
-    const order = currentRoom.turnOrder || [];
-    const currentIndex = currentRoom.currentTurnIndex || 0;
+    const rawOrder = currentRoom.turnOrder || [];
+    const order = Array.isArray(rawOrder) ? rawOrder : Object.values(rawOrder);
+    const currentIndex = Number(currentRoom.currentTurnIndex || 0);
+
     if (order[currentIndex] !== PLAYER_ID) {
       showToast('Not your turn!', 'warning');
       return;
@@ -515,7 +541,8 @@
       timestamp:  Date.now(),
     };
 
-    const clues = currentRoom.clues || [];
+    const rawClues = currentRoom.clues || [];
+    const clues = Array.isArray(rawClues) ? [...rawClues] : Object.values(rawClues);
     clues.push(clueItem);
 
     // Advance turn
