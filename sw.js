@@ -1,7 +1,7 @@
 // Sync Room — Service Worker
 // Provides basic offline caching for the app shell
 
-const CACHE_NAME = 'syncroom-v2';
+const CACHE_NAME = 'syncroom-v3';
 const STATIC_ASSETS = [
   './',
   './index.html',

@@ -58,12 +58,19 @@
     onlineRef.onDisconnect().set(false);
   }
 
-  // ── Setup Lobby Avatar Picker ──────────────────────────────
+  // ── Setup Lobby Profile & Avatar Picker ───────────────────
   function setupLobbyAvatarPicker() {
     const container = document.getElementById('lobby-avatar-picker');
     if (!container || typeof KERALA_AVATARS === 'undefined') return;
 
-    const myCurrentAvatar = currentRoom?.players?.[PLAYER_ID]?.avatar || localStorage.getItem('syncroom_avatar') || KERALA_AVATARS[0].id;
+    const myPlayer = currentRoom?.players?.[PLAYER_ID];
+    const myCurrentAvatar = myPlayer?.avatar || localStorage.getItem('syncroom_avatar') || KERALA_AVATARS[0].id;
+
+    // Pre-fill name input
+    const nameInput = document.getElementById('lobby-edit-name-input');
+    if (nameInput && myPlayer?.name && !nameInput.value) {
+      nameInput.value = myPlayer.name;
+    }
 
     container.innerHTML = '';
     KERALA_AVATARS.forEach(avatar => {
@@ -75,11 +82,22 @@
         document.querySelectorAll('#lobby-avatar-picker .avatar-choice-item').forEach(i => i.classList.remove('selected'));
         el.classList.add('selected');
         localStorage.setItem('syncroom_avatar', avatar.id);
-        // Realtime update in Firebase!
         await dbUpdate(roomPath('players/' + PLAYER_ID), { avatar: avatar.id });
       });
       container.appendChild(el);
     });
+  }
+
+  async function saveEditedName() {
+    const nameInput = document.getElementById('lobby-edit-name-input');
+    const newName = nameInput.value.trim();
+    if (!newName) {
+      showToast('Name cannot be empty', 'warning');
+      return;
+    }
+    localStorage.setItem('syncroom_name', newName);
+    await dbUpdate(roomPath('players/' + PLAYER_ID), { name: newName });
+    showToast('Name updated!', 'success');
   }
   function showScreen(name) {
     document.querySelectorAll('.screen').forEach(s => {
@@ -177,15 +195,21 @@
     const pair = room.currentWordId ? getWordPairById(room.currentWordId) : null;
     document.getElementById('arena-category').textContent = pair ? `Category: ${pair.category}` : '';
 
-    // Host force-vote button
+    // Host controls in arena
     const isHost = room.hostId === PLAYER_ID;
     document.getElementById('btn-host-force-vote').classList.toggle('hidden', !isHost);
+    document.getElementById('btn-host-skip-turn').classList.toggle('hidden', !isHost);
 
     // Setup Turn Order Strip (Safe Array conversion)
     const rawOrder = room.turnOrder || [];
-    const order = Array.isArray(rawOrder) ? rawOrder : Object.values(rawOrder);
-    const players = room.players || {};
-    const currentTurnIndex = Number(room.currentTurnIndex || 0);
+    let order = Array.isArray(rawOrder) ? rawOrder : Object.values(rawOrder);
+    
+    // Fallback: If turnOrder is missing or empty, build it from player keys
+    if (!order || order.length === 0) {
+      order = Object.keys(players);
+    }
+
+    const currentTurnIndex = Number(room.currentTurnIndex || 0) % (order.length || 1);
     const currentTurnPlayerId = order[currentTurnIndex];
 
     const stripEl = document.getElementById('turn-players-strip');
@@ -244,7 +268,7 @@
     }
 
     // Turn banner & input state
-    const isMyTurn = currentTurnPlayerId === PLAYER_ID;
+    const isMyTurn = (currentTurnPlayerId === PLAYER_ID);
     const clueInput = document.getElementById('clue-input');
     const sendBtn   = document.getElementById('btn-send-clue');
     const statusBanner = document.getElementById('turn-status-banner');
@@ -253,12 +277,12 @@
       statusBanner.textContent = "👉 YOUR TURN to give a clue!";
       statusBanner.style.color = "var(--accent)";
       clueInput.disabled = false;
+      clueInput.readOnly = false;
       clueInput.placeholder = "Type your clue here and press Enter...";
       sendBtn.disabled = false;
-      clueInput.focus();
     } else {
-      const activeName = players[currentTurnPlayerId]?.name || 'player';
-      statusBanner.textContent = `Waiting for ${activeName}...`;
+      const activeName = players[currentTurnPlayerId]?.name || 'a player';
+      statusBanner.textContent = `Waiting for ${activeName} to give a clue...`;
       statusBanner.style.color = "var(--text-muted)";
       clueInput.disabled = true;
       clueInput.placeholder = `Waiting for ${activeName}'s clue...`;
@@ -570,6 +594,43 @@
     });
   }
 
+  // Host skips stuck turn
+  async function hostSkipTurn() {
+    if (!currentRoom || currentRoom.hostId !== PLAYER_ID) return;
+    const rawOrder = currentRoom.turnOrder || [];
+    const order = Array.isArray(rawOrder) ? rawOrder : Object.values(rawOrder);
+    const currentIndex = Number(currentRoom.currentTurnIndex || 0);
+
+    let nextIndex = currentIndex + 1;
+    let nextClueRound = currentRoom.clueRound || 1;
+    let nextState = 'arena';
+
+    if (nextIndex >= order.length) {
+      if (nextClueRound < (currentRoom.totalClueRounds || TOTAL_DEFAULT_ROUNDS)) {
+        nextClueRound++;
+        nextIndex = 0;
+      } else {
+        nextState = 'voting';
+      }
+    }
+
+    showToast('Skipped turn to next player', 'info');
+    await dbUpdate(roomPath(), {
+      currentTurnIndex: nextIndex,
+      clueRound:        nextClueRound,
+      state:            nextState,
+      typingPlayerId:   null,
+    });
+  }
+
+  async function backToLobby() {
+    if (!currentRoom) return;
+    myWord = null;
+    myRole = null;
+    selectedVote = null;
+    await dbUpdate(roomPath(), { state: 'lobby' });
+  }
+
   // Live typing broadcaster
   function onClueInputTyping() {
     clearTimeout(typingTimeout);
@@ -728,6 +789,17 @@
 
     document.getElementById('btn-start').addEventListener('click', startGame);
 
+    // Save Name in Lobby
+    const saveNameBtn = document.getElementById('btn-save-name');
+    if (saveNameBtn) saveNameBtn.addEventListener('click', saveEditedName);
+
+    // Skip Turn & Back to Lobby
+    const skipBtn = document.getElementById('btn-host-skip-turn');
+    if (skipBtn) skipBtn.addEventListener('click', hostSkipTurn);
+
+    const backLobbyBtn = document.getElementById('btn-arena-back-lobby');
+    if (backLobbyBtn) backLobbyBtn.addEventListener('click', backToLobby);
+
     // Clue Form & Typing
     document.getElementById('clue-form').addEventListener('submit', sendClue);
     document.getElementById('clue-input').addEventListener('input', onClueInputTyping);
@@ -823,8 +895,14 @@
   }
 
   function getOrCreatePlayerId() {
-    let id = localStorage.getItem('syncroom_player_id');
-    if (!id) { id = 'p_' + Math.random().toString(36).slice(2, 11) + Date.now().toString(36); localStorage.setItem('syncroom_player_id', id); }
+    let id = sessionStorage.getItem('syncroom_player_id');
+    if (!id) {
+      id = localStorage.getItem('syncroom_player_id');
+    }
+    if (!id) {
+      id = 'p_' + Math.random().toString(36).slice(2, 9) + '_' + Date.now().toString(36).slice(-4);
+      sessionStorage.setItem('syncroom_player_id', id);
+    }
     return id;
   }
 

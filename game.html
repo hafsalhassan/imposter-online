@@ -45,13 +45,17 @@
         <span class="badge badge-neutral" id="lobby-player-count">0 joined</span>
       </div>
 
-      <!-- 🎭 My Profile & Avatar Picker in Lobby -->
+      <!-- 🎭 My Profile: Avatar & Name Editor in Lobby -->
       <div class="card card-body mb-4" id="lobby-my-profile">
         <div class="flex items-center justify-between mb-2">
-          <label class="text-xs font-bold text-sub">YOUR AVATAR</label>
-          <span class="text-xs text-muted">Tap to change</span>
+          <label class="text-xs font-bold text-sub">YOUR AVATAR & NAME</label>
+          <span class="text-xs text-muted">Tap avatar to change</span>
         </div>
-        <div class="avatar-picker-grid" id="lobby-avatar-picker"></div>
+        <div class="avatar-picker-grid mb-3" id="lobby-avatar-picker"></div>
+        <div class="flex gap-2">
+          <input type="text" id="lobby-edit-name-input" class="input" placeholder="Change your name" maxlength="20">
+          <button class="btn btn-secondary btn--sm" id="btn-save-name">Save Name</button>
+        </div>
       </div>
 
       <!-- 👑 HOST EXCLUSIVE SETTINGS (Hidden from players) -->
@@ -132,13 +136,17 @@
   <div id="screen-arena" class="screen animate-in hidden">
     <div class="container py-4">
       
-      <!-- Top info bar (NO category or mode hints for players!) -->
+      <!-- Top info bar -->
       <div class="arena-header mb-3">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <span class="badge badge-accent" id="arena-round-badge">Round 1 of 2</span>
           </div>
-          <button class="btn btn-ghost btn--sm text-xs text-danger hidden" id="btn-host-force-vote">Go to Vote →</button>
+          <div class="flex items-center gap-2">
+            <button class="btn btn-ghost btn--sm text-xs text-sub hidden" id="btn-host-skip-turn" title="Skip current player if stuck">Skip Turn ⏭️</button>
+            <button class="btn btn-ghost btn--sm text-xs text-danger hidden" id="btn-host-force-vote">Vote Now →</button>
+            <button class="btn btn-ghost btn--sm text-xs" id="btn-arena-back-lobby">🏠 Lobby</button>
+          </div>
         </div>
       </div>
 

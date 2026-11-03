@@ -38,12 +38,16 @@
   }
 
   function genPlayerId() {
-    return 'p_' + Math.random().toString(36).slice(2, 11) + Date.now().toString(36);
+    return 'p_' + Math.random().toString(36).slice(2, 9) + '_' + Date.now().toString(36).slice(-4);
   }
 
   function getOrCreatePlayerId() {
-    let id = localStorage.getItem('syncroom_player_id');
-    if (!id) { id = genPlayerId(); localStorage.setItem('syncroom_player_id', id); }
+    // Check sessionStorage first so multiple tabs on same browser get unique players!
+    let id = sessionStorage.getItem('syncroom_player_id');
+    if (!id) {
+      id = genPlayerId();
+      sessionStorage.setItem('syncroom_player_id', id);
+    }
     return id;
   }
 
