@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Team sync and collaboration tool">
+  <meta name="theme-color" content="#6366F1">
+  <title>Sync Room</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Malayalam:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/main.css">
+  <style>
+    .landing-wrap {
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 32px 20px;
+    }
+    .form-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 28px 24px;
+      box-shadow: var(--shadow-md);
+    }
+    .or-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 20px 0;
+      color: var(--text-muted);
+      font-size: .8125rem;
+    }
+    .or-divider::before, .or-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+    .join-row {
+      display: flex;
+      gap: 8px;
+    }
+    .join-row .input { flex: 1; }
+    .join-row .btn  { flex-shrink: 0; }
+    .error-msg {
+      font-size: .8125rem;
+      color: var(--danger);
+      margin-top: 6px;
+      display: none;
+    }
+    .error-msg.show { display: block; }
+    .app-brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 32px;
+      text-align: center;
+    }
+    .brand-icon {
+      width: 56px; height: 56px;
+      background: var(--accent);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem;
+      margin-bottom: 12px;
+      box-shadow: 0 4px 14px rgba(99,102,241,.3);
+    }
+    .brand-name { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; }
+    .brand-sub  { font-size: .875rem; color: var(--text-sub); margin-top: 4px; }
+    .recent-rooms {
+      margin-top: 24px;
+    }
+    .recent-label {
+      font-size: .75rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: 8px;
+    }
+    .recent-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      margin-bottom: 6px;
+      cursor: pointer;
+      transition: var(--transition);
+      text-decoration: none;
+    }
+    .recent-item:hover { background: var(--accent-light); border-color: var(--accent); }
+    .recent-code { font-family: monospace; font-weight: 600; letter-spacing: .1em; color: var(--accent); }
+    .recent-meta { font-size: .75rem; color: var(--text-muted); }
+    .recent-arrow { color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div id="toast-container"></div>
+  <div class="landing-wrap">
+    <div class="container" style="max-width:400px">
+      <div class="app-brand">
+        <div class="brand-icon">◈</div>
+        <div class="brand-name">Sync Room</div>
+        <div class="brand-sub">Team collaboration, simplified</div>
+      </div>
+
+      <div class="form-card animate-in">
+        <!-- Name input (shared for both create & join) -->
+        <div class="input-group">
+          <label for="player-name">Your name</label>
+          <input
+            type="text"
+            id="player-name"
+            class="input"
+            placeholder="Enter your name"
+            autocomplete="given-name"
+            maxlength="24"
+            autofocus
+          >
+          <div class="error-msg" id="name-error">Please enter your name</div>
+        </div>
+
+        <div style="margin-top:20px">
+          <button class="btn btn-primary btn--full btn--lg" id="btn-create">
+            <span>+ Create New Room</span>
+          </button>
+        </div>
+
+        <div class="or-divider">or join existing</div>
+
+        <div class="join-row">
+          <input
+            type="text"
+            id="room-code-input"
+            class="input input--code"
+            placeholder="XXXX"
+            maxlength="4"
+            autocomplete="off"
+            autocapitalize="characters"
+          >
+          <button class="btn btn-secondary" id="btn-join">Join →</button>
+        </div>
+        <div class="error-msg" id="room-error">Room not found. Check the code.</div>
+      </div>
+
+      <!-- Recent rooms -->
+      <div class="recent-rooms hidden" id="recent-rooms">
+        <div class="recent-label">Recent rooms</div>
+        <div id="recent-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/room.js"></script>
+  <script>
+    // Register service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>

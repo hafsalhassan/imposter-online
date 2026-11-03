@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#6366F1">
+  <title>Sync Room</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Malayalam:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+
+<!-- ── Toast ──────────────────────────────────────────────── -->
+<div id="toast-container"></div>
+
+<!-- ── Docked Panel (desktop sidebar mode) ──────────────── -->
+<div class="docked-panel" id="docked-panel">
+  <div class="docked-header">
+    <span class="app-logo" style="font-size:.875rem">
+      <span class="app-logo-icon" style="width:22px;height:22px;font-size:.7rem">◈</span>
+      Sync Room
+    </span>
+    <button class="btn btn-ghost btn--sm" id="btn-undock" title="Expand">⊞</button>
+  </div>
+  <div class="docked-body">
+    <div class="docked-timer" id="docked-timer">--:--</div>
+    <div id="docked-progress" class="progress-bar-wrap" style="margin:0">
+      <div class="progress-bar" id="docked-progress-bar" style="width:100%"></div>
+    </div>
+    <div id="docked-state-label" class="text-sm text-sub text-center">Waiting…</div>
+    <button class="btn btn-secondary btn--full btn--sm hidden" id="docked-word-btn">👁 My Word</button>
+    <button class="btn btn-primary btn--full btn--sm hidden"  id="docked-vote-btn">Cast Vote</button>
+    <div class="text-xs text-muted text-center" id="docked-meta"></div>
+  </div>
+</div>
+
+<!-- ── Main content ──────────────────────────────────────── -->
+<div class="main-content" id="main-content">
+
+  <!-- Header -->
+  <header class="app-header">
+    <a class="app-logo" href="index.html">
+      <span class="app-logo-icon">◈</span>
+      <span>Sync Room</span>
+    </a>
+    <div class="flex items-center gap-2">
+      <span class="room-code-pill" id="header-room-code">----</span>
+      <button class="btn btn-ghost btn--sm" id="btn-share" title="Share room link">↗</button>
+      <button class="btn btn-ghost btn--sm" id="btn-dock" title="Dock to sidebar">⊟</button>
+    </div>
+  </header>
+
+  <!-- Screens (only one visible at a time) -->
+
+  <!-- ── LOBBY ──────────────────────────────────────────── -->
+  <div id="screen-lobby" class="screen animate-in hidden">
+    <div class="container py-6">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2>Waiting Room</h2>
+          <p class="text-sm text-sub mt-2">Share the room code to invite others</p>
+        </div>
+        <span class="badge badge-neutral" id="lobby-player-count">0 joined</span>
+      </div>
+
+      <!-- Host settings (host only) -->
+      <div class="card card-body mb-4 hidden" id="host-settings">
+        <div class="flex items-center justify-between mb-3">
+          <h3>Round Settings</h3>
+          <span class="badge badge-accent text-xs">Host</span>
+        </div>
+        <div class="setting-row mb-3">
+          <label class="text-sm text-sub mb-2" style="display:block">Discussion Timer</label>
+          <div class="timer-options" id="timer-options">
+            <button class="timer-opt" data-seconds="60">1 min</button>
+            <button class="timer-opt" data-seconds="120">2 min</button>
+            <button class="timer-opt active" data-seconds="180">3 min</button>
+            <button class="timer-opt" data-seconds="300">5 min</button>
+            <button class="timer-opt" data-seconds="420">7 min</button>
+            <button class="timer-opt" data-seconds="0">∞</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Player list -->
+      <div class="card card-body mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3>Participants</h3>
+          <span class="text-xs text-muted">Max 15</span>
+        </div>
+        <div id="lobby-players" class="player-list"></div>
+      </div>
+
+      <!-- Start button (host) / waiting (others) -->
+      <div id="host-start-wrap" class="hidden">
+        <button class="btn btn-primary btn--full btn--lg" id="btn-start">
+          Start Round 1
+        </button>
+        <p class="text-xs text-muted text-center mt-3">Need at least 3 players to start</p>
+      </div>
+      <div id="guest-waiting" class="hidden">
+        <div class="waiting-card">
+          <div class="spinner spinner--lg" style="margin:0 auto 12px"></div>
+          <p class="text-center text-sub text-sm">Waiting for host to start the game…</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── WORD REVEAL ────────────────────────────────────── -->
+  <div id="screen-word-reveal" class="screen animate-in hidden">
+    <div class="container py-6">
+      <div class="text-center mb-6">
+        <span class="badge badge-accent mb-3" id="round-badge">Round 1</span>
+        <h2>Your Secret Word</h2>
+        <p class="text-sm text-sub mt-2">Tap the card to reveal. It hides after 5 seconds.</p>
+      </div>
+
+      <div class="word-card" id="word-card">
+        <div class="word-card-inner">
+          <div class="word-card-front">
+            <div class="word-card-tap-hint">
+              <span class="word-card-icon">👁</span>
+              <span class="text-sm text-sub">Tap to reveal your word</span>
+            </div>
+          </div>
+          <div class="word-card-back">
+            <div class="word-display ml-text" id="word-display">–</div>
+            <div class="word-en text-sub" id="word-en-display">–</div>
+            <div class="word-hide-countdown" id="word-hide-countdown">Hiding in 5s</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="category-pill text-center mt-4" id="category-display"></div>
+
+      <div class="role-hint mt-4 hidden" id="imposter-hint">
+        <div class="role-hint-card role-hint--imposter">
+          <span class="role-hint-icon">🕵️</span>
+          <div>
+            <div class="font-bold" style="color:var(--danger)">You are the Imposter!</div>
+            <div class="text-sm text-sub mt-1">Your word is <em>similar</em> but different. Blend in — don't get caught!</div>
+          </div>
+        </div>
+      </div>
+      <div class="role-hint mt-4 hidden" id="player-hint">
+        <div class="role-hint-card">
+          <span class="role-hint-icon">👤</span>
+          <div>
+            <div class="font-bold">You are a Regular Player</div>
+            <div class="text-sm text-sub mt-1">Everyone has the same word — except the imposter(s).</div>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn--full mt-6" id="btn-ready">
+        ✓ I've Seen My Word
+      </button>
+      <div class="text-xs text-muted text-center mt-3" id="ready-status">
+        Waiting for others to be ready…
+      </div>
+    </div>
+  </div>
+
+  <!-- ── DISCUSSION ─────────────────────────────────────── -->
+  <div id="screen-discussion" class="screen animate-in hidden">
+    <div class="container py-6">
+      <div class="text-center mb-4">
+        <span class="badge badge-accent mb-3" id="disc-round-badge">Round 1</span>
+        <h2>Discussion Time</h2>
+        <p class="text-sm text-sub mt-2">Talk it out — find the imposter!</p>
+      </div>
+
+      <!-- Timer -->
+      <div class="timer-card mb-4" id="timer-card">
+        <div class="timer-display" id="timer-display">3:00</div>
+        <div class="progress-bar-wrap mt-3">
+          <div class="progress-bar" id="timer-progress"></div>
+        </div>
+      </div>
+
+      <!-- Participants -->
+      <div class="card card-body mb-4">
+        <h3 class="mb-3">Participants</h3>
+        <div id="discussion-players" class="player-grid"></div>
+      </div>
+
+      <!-- Peek word -->
+      <button class="btn btn-secondary btn--full mb-3" id="btn-peek">
+        👁 Peek at My Word
+      </button>
+
+      <!-- Category hint -->
+      <div class="category-hint-bar" id="disc-category"></div>
+
+      <!-- Host: end discussion early -->
+      <button class="btn btn-ghost btn--full btn--sm mt-3 hidden" id="btn-end-discussion">
+        End Discussion Early
+      </button>
+    </div>
+  </div>
+
+  <!-- ── VOTING ──────────────────────────────────────────── -->
+  <div id="screen-voting" class="screen animate-in hidden">
+    <div class="container py-6">
+      <div class="text-center mb-6">
+        <span class="badge badge-danger mb-3">Vote</span>
+        <h2>Who is the Imposter?</h2>
+        <p class="text-sm text-sub mt-2">Select the player you think is the imposter</p>
+      </div>
+
+      <div id="vote-list" class="vote-list mb-4"></div>
+
+      <div class="text-xs text-muted text-center mb-4" id="vote-status">
+        Waiting for votes…
+      </div>
+
+      <button class="btn btn-danger btn--full btn--lg" id="btn-cast-vote" disabled>
+        Cast Vote →
+      </button>
+    </div>
+  </div>
+
+  <!-- ── RESULTS ─────────────────────────────────────────── -->
+  <div id="screen-results" class="screen animate-in hidden">
+    <div class="container py-6">
+      <div class="text-center mb-4">
+        <span class="badge badge-neutral mb-3" id="results-round-badge">Round 1 Results</span>
+      </div>
+
+      <!-- Eliminated reveal -->
+      <div class="reveal-card mb-4" id="reveal-card">
+        <div class="reveal-label">Eliminated</div>
+        <div class="reveal-name" id="reveal-name">–</div>
+        <div class="reveal-verdict" id="reveal-verdict"></div>
+      </div>
+
+      <!-- Word reveal -->
+      <div class="words-reveal-row mb-4" id="words-reveal">
+        <div class="word-reveal-item">
+          <div class="text-xs text-muted mb-1">Everyone's word</div>
+          <div class="word-reveal-val ml-text" id="result-main-word">–</div>
+        </div>
+        <div class="word-reveal-divider">vs</div>
+        <div class="word-reveal-item">
+          <div class="text-xs text-muted mb-1">Imposter's word</div>
+          <div class="word-reveal-val word-reveal-val--imposter ml-text" id="result-imposter-word">–</div>
+        </div>
+      </div>
+
+      <!-- Score changes this round -->
+      <div class="card card-body mb-4" id="score-changes-card">
+        <h3 class="mb-3">This Round</h3>
+        <div id="score-changes-list"></div>
+      </div>
+
+      <!-- Leaderboard -->
+      <div class="card card-body mb-4">
+        <h3 class="mb-3">🏆 Leaderboard</h3>
+        <div id="leaderboard-list"></div>
+      </div>
+
+      <!-- Host controls -->
+      <div id="host-result-controls" class="hidden flex gap-3">
+        <button class="btn btn-secondary" style="flex:1" id="btn-end-game">End Game</button>
+        <button class="btn btn-primary" style="flex:1" id="btn-next-round">Next Round →</button>
+      </div>
+      <div id="guest-result-waiting" class="hidden">
+        <p class="text-center text-sub text-sm">Waiting for host…</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── GAME OVER ──────────────────────────────────────── -->
+  <div id="screen-ended" class="screen animate-in hidden">
+    <div class="container py-8">
+      <div class="text-center mb-6">
+        <div style="font-size:3rem;margin-bottom:12px">🎉</div>
+        <h1>Game Over!</h1>
+        <p class="text-sub mt-2">Thanks for playing Sync Room</p>
+      </div>
+      <div class="card card-body mb-6">
+        <h3 class="mb-3">🏆 Final Standings</h3>
+        <div id="final-leaderboard"></div>
+      </div>
+      <a class="btn btn-primary btn--full btn--lg" href="index.html">← Back to Home</a>
+    </div>
+  </div>
+
+</div><!-- /main-content -->
+
+<!-- ── Kick Confirm Modal ──────────────────────────────── -->
+<div class="modal-overlay hidden" id="kick-modal">
+  <div class="modal">
+    <h3 style="margin-bottom:8px">Remove player?</h3>
+    <p class="text-sm text-sub mb-4" id="kick-modal-name">–</p>
+    <div class="flex gap-3">
+      <button class="btn btn-secondary" style="flex:1" id="kick-cancel">Cancel</button>
+      <button class="btn btn-danger" style="flex:1" id="kick-confirm">Remove</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Peek Word Modal ──────────────────────────────────── -->
+<div class="modal-overlay hidden" id="peek-modal">
+  <div class="modal" style="text-align:center">
+    <div class="text-xs text-muted mb-2">Your word</div>
+    <div class="word-display ml-text" id="peek-word-display" style="margin:0 auto 8px">–</div>
+    <div class="text-sub text-sm" id="peek-word-en">–</div>
+    <div class="text-xs text-muted mt-4" id="peek-hide-countdown">Closing in 5s</div>
+    <button class="btn btn-ghost btn--sm mt-3" id="peek-close">Close</button>
+  </div>
+</div>
+
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="js/words.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
