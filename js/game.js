@@ -1,7 +1,7 @@
 // ============================================================
 //  game.js — Clue Chat, Hold-to-Reveal & Turn-based Imposter Game
 // ============================================================
-(function () {
+function initGame() {
   'use strict';
 
   // ── Safe Avatar Svg Getter (Flat Gaming Animal Avatars) ───
@@ -14,11 +14,10 @@
       if (match) return match.svg;
       if (ANIMAL_AVATARS[0]) return ANIMAL_AVATARS[0].svg;
     }
-    // Universal SVG fallback
     return `<svg viewBox="0 0 100 100" fill="#6366F1"><circle cx="50" cy="50" r="48" fill="#EEF2FF"/><circle cx="50" cy="40" r="20" fill="#6366F1"/><ellipse cx="50" cy="80" rx="30" ry="20" fill="#6366F1"/></svg>`;
   }
 
-  const TOTAL_DEFAULT_ROUNDS = 2; // 2 clue rounds before voting
+  const TOTAL_DEFAULT_ROUNDS = 2;
 
   const urlParams = new URLSearchParams(window.location.search);
   const ROOM_CODE = (urlParams.get('room') || '').toUpperCase().trim();
@@ -26,7 +25,7 @@
 
   if (!ROOM_CODE) { window.location.href = 'index.html'; return; }
 
-  // Immediately display room code in header!
+  // Immediately display room code in header
   const headerCodeEl = document.getElementById('header-room-code');
   if (headerCodeEl) headerCodeEl.textContent = ROOM_CODE;
 
@@ -940,4 +939,10 @@
     setTimeout(() => el.remove(), 3000);
   }
 
-})();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initGame);
+} else {
+  initGame();
+}
