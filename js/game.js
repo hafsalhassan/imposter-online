@@ -98,6 +98,11 @@
     const count     = playerArr.length;
 
     document.getElementById('lobby-player-count').textContent = count + ' joined';
+    
+    // Host exclusive controls
+    const hostPanel = document.getElementById('host-exclusive-panel');
+    if (hostPanel) hostPanel.classList.toggle('hidden', !isHost);
+
     document.getElementById('host-start-wrap').classList.toggle('hidden', !isHost);
     document.getElementById('guest-waiting').classList.toggle('hidden', isHost);
 
@@ -247,19 +252,35 @@
     myWord = wordSnap.val();
     myRole = roleSnap.val();
 
-    if (myWord) {
-      const { word, wordEn } = parseWord(myWord);
-      document.getElementById('arena-word-text').textContent = word;
-      document.getElementById('arena-word-en').textContent   = wordEn;
-    }
+    const wordTextEl = document.getElementById('arena-word-text');
+    const wordEnEl   = document.getElementById('arena-word-en');
+    const roleTag    = document.getElementById('arena-role-tag');
+    const revealedTag = document.getElementById('arena-revealed-tag');
 
-    const roleTag = document.getElementById('arena-role-tag');
     if (myRole === 'imposter') {
       roleTag.className = 'role-badge-tag imposter';
       roleTag.textContent = '🕵️ YOU ARE THE IMPOSTER!';
+
+      if (currentRoom && currentRoom.imposterMode === 'blind') {
+        revealedTag.textContent = 'YOUR ROLE';
+        wordTextEl.textContent = 'IMPOSTER';
+        wordTextEl.style.color = 'var(--danger)';
+        wordEnEl.textContent = 'Blend in! Try to guess what everyone is talking about.';
+      } else {
+        revealedTag.textContent = 'YOUR SECRET WORD';
+        const { word, wordEn } = parseWord(myWord || '');
+        wordTextEl.textContent = word;
+        wordTextEl.style.color = 'var(--text)';
+        wordEnEl.textContent   = wordEn;
+      }
     } else {
+      revealedTag.textContent = 'YOUR SECRET WORD';
       roleTag.className = 'role-badge-tag player';
       roleTag.textContent = '👤 Regular Player';
+      const { word, wordEn } = parseWord(myWord || '');
+      wordTextEl.textContent = word;
+      wordTextEl.style.color = 'var(--text)';
+      wordEnEl.textContent   = wordEn;
     }
   }
 
@@ -357,8 +378,14 @@
     if (pair) {
       document.getElementById('result-main-word').innerHTML =
         `${pair.main} <span style="font-size:.75rem;font-weight:400;color:var(--text-muted)">(${pair.mainEn})</span>`;
-      document.getElementById('result-imposter-word').innerHTML =
-        `${pair.imposter} <span style="font-size:.75rem;font-weight:400;color:var(--text-muted)">(${pair.imposterEn})</span>`;
+      
+      if (room.imposterMode === 'blind') {
+        document.getElementById('result-imposter-word').innerHTML =
+          `<em>None (Blind Imposter)</em>`;
+      } else {
+        document.getElementById('result-imposter-word').innerHTML =
+          `${pair.imposter} <span style="font-size:.75rem;font-weight:400;color:var(--text-muted)">(${pair.imposterEn})</span>`;
+      }
     }
 
     const scoreChanges = results.scoreChanges || {};
@@ -405,7 +432,15 @@
     const playerArr = objectToArray(players);
     if (playerArr.length < 3) { showToast('Need at least 3 players to start!', 'warning'); return; }
 
-    const pair = pickNextWordPair(ROOM_CODE);
+    // Read Host Choices
+    const catSelect = document.getElementById('host-category-select');
+    const selectedCategory = catSelect ? catSelect.value : 'ALL';
+
+    const modeRadio = document.querySelector('input[name="imposter-mode"]:checked');
+    const imposterMode = modeRadio ? modeRadio.value : 'similar'; // 'similar' or 'blind'
+
+    // Pick Word Pair using selected Category
+    const pair = pickNextWordPair(ROOM_CODE, selectedCategory);
     const round = (currentRoom.round || 0) + 1;
 
     // Imposter calculation
@@ -421,9 +456,18 @@
     playerArr.forEach(p => {
       const isImposter = imposters.includes(p.id);
       rolesUpdate[p.id] = isImposter ? 'imposter' : 'player';
-      wordsUpdate[p.id] = isImposter
-        ? (pair.imposter + ' (' + pair.imposterEn + ')')
-        : (pair.main     + ' (' + pair.mainEn     + ')');
+
+      if (isImposter) {
+        if (imposterMode === 'blind') {
+          // Blind Imposter gets NO word
+          wordsUpdate[p.id] = "YOU ARE THE IMPOSTER (No Word Given)";
+        } else {
+          // Similar word
+          wordsUpdate[p.id] = pair.imposter + ' (' + pair.imposterEn + ')';
+        }
+      } else {
+        wordsUpdate[p.id] = pair.main + ' (' + pair.mainEn + ')';
+      }
     });
 
     myWord = null;
@@ -443,6 +487,7 @@
       turnOrder,
       currentTurnIndex: 0,
       currentWordId:    pair.id,
+      imposterMode,
       typingPlayerId:   null,
     });
   }

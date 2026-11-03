@@ -190,17 +190,24 @@ function shuffleArray(arr) {
   return a;
 }
 
-// ── Anti-Repeat Word Picker ─────────────────────────────────
-// Stores used word IDs in localStorage per room.
-// Resets only when all 155 pairs are exhausted.
-function pickNextWordPair(roomCode) {
+// ── Anti-Repeat Word Picker (Supports Category Filter) ───────
+function pickNextWordPair(roomCode, categoryFilter) {
   const storageKey = `imposter_used_${roomCode}`;
   let used = JSON.parse(localStorage.getItem(storageKey) || '[]');
-  let remaining = WORD_LIBRARY.filter(w => !used.includes(w.id));
+  
+  // Filter by category if specified and not 'ALL'
+  let pool = WORD_LIBRARY;
+  if (categoryFilter && categoryFilter !== 'ALL') {
+    pool = WORD_LIBRARY.filter(w => w.category === categoryFilter);
+    if (pool.length === 0) pool = WORD_LIBRARY; // fallback
+  }
+
+  let remaining = pool.filter(w => !used.includes(w.id));
 
   if (remaining.length === 0) {
-    used = [];
-    remaining = [...WORD_LIBRARY];
+    // Reset used list for this category
+    used = used.filter(id => !pool.some(w => w.id === id));
+    remaining = [...pool];
   }
 
   const shuffled = shuffleArray(remaining);

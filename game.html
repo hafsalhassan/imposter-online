@@ -56,16 +56,65 @@
       <div class="flex items-center justify-between mb-4">
         <div>
           <h2>Waiting Room</h2>
-          <p class="text-sm text-sub mt-2">Share the code to invite your teammates</p>
+          <p class="text-sm text-sub mt-1">Share the code to invite your teammates</p>
         </div>
         <span class="badge badge-neutral" id="lobby-player-count">0 joined</span>
       </div>
 
-      <!-- Player list -->
+      <!-- 👑 HOST EXCLUSIVE SETTINGS (Hidden from players) -->
+      <div class="card card-body mb-4 hidden" id="host-exclusive-panel">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="flex items-center gap-2">
+            <span>⚙️ Host Controls</span>
+          </h3>
+          <span class="badge badge-accent text-xs">Host Only</span>
+        </div>
+
+        <!-- Category Picker -->
+        <div class="setting-item mb-3">
+          <label class="text-xs font-bold text-sub mb-1" style="display:block">CATEGORY</label>
+          <select id="host-category-select" class="input category-select">
+            <option value="ALL">🎲 All Categories (Random)</option>
+            <option value="Kerala Food">🍛 Kerala Food</option>
+            <option value="Malayalam Cinema">🎬 Malayalam Cinema</option>
+            <option value="Kerala Places">🏖️ Kerala Places</option>
+            <option value="Festivals">🎊 Festivals</option>
+            <option value="Office Life">💼 Office Life</option>
+            <option value="Nature">🌿 Nature</option>
+            <option value="Sports">🏏 Sports</option>
+            <option value="Music">🎵 Music</option>
+            <option value="Transport">🚌 Transport</option>
+            <option value="Kerala Culture">🏛️ Kerala Culture</option>
+          </select>
+        </div>
+
+        <!-- Imposter Word Mode -->
+        <div class="setting-item">
+          <label class="text-xs font-bold text-sub mb-2" style="display:block">IMPOSTER CLUE MODE</label>
+          <div class="mode-toggle-group">
+            <label class="mode-option">
+              <input type="radio" name="imposter-mode" value="similar" checked>
+              <div class="mode-box">
+                <span class="mode-title">Similar Word</span>
+                <span class="mode-desc">Imposter gets a tricky matching word (e.g. സദ്യ ↔ അവിയൽ)</span>
+              </div>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="imposter-mode" value="blind">
+              <div class="mode-box">
+                <span class="mode-title">Blind Imposter</span>
+                <span class="mode-desc">Imposter gets NO word, only told "You are the Imposter"</span>
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Player list (with Kick Out option) -->
       <div class="card card-body mb-4">
         <div class="flex items-center justify-between mb-3">
           <h3>Participants</h3>
-          <span class="text-xs text-muted">Order of Clues</span>
+          <span class="text-xs text-muted">Clue Turn Order</span>
         </div>
         <div id="lobby-players" class="player-list"></div>
       </div>
@@ -90,14 +139,13 @@
   <div id="screen-arena" class="screen animate-in hidden">
     <div class="container py-4">
       
-      <!-- Top info bar -->
+      <!-- Top info bar (NO category or mode hints for players!) -->
       <div class="arena-header mb-3">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <span class="badge badge-accent" id="arena-round-badge">Round 1 of 2</span>
-            <span class="text-xs text-muted" id="arena-category"></span>
           </div>
-          <button class="btn btn-ghost btn--sm text-xs text-danger" id="btn-host-force-vote">Go to Vote →</button>
+          <button class="btn btn-ghost btn--sm text-xs text-danger hidden" id="btn-host-force-vote">Go to Vote →</button>
         </div>
       </div>
 
@@ -110,7 +158,7 @@
             <span class="hold-subtext">Release to immediately hide from prying eyes</span>
           </div>
           <div class="word-peek-revealed hidden" id="word-peek-shown">
-            <div class="revealed-tag">YOUR SECRET WORD</div>
+            <div class="revealed-tag" id="arena-revealed-tag">YOUR SECRET WORD</div>
             <div class="word-display ml-text" id="arena-word-text">–</div>
             <div class="word-en-sub" id="arena-word-en">–</div>
             <div class="role-badge-tag" id="arena-role-tag"></div>
