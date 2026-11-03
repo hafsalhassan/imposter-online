@@ -27,13 +27,7 @@
     <button class="btn btn-ghost btn--sm" id="btn-undock" title="Expand">⊞</button>
   </div>
   <div class="docked-body">
-    <div class="docked-timer" id="docked-timer">--:--</div>
-    <div id="docked-progress" class="progress-bar-wrap" style="margin:0">
-      <div class="progress-bar" id="docked-progress-bar" style="width:100%"></div>
-    </div>
     <div id="docked-state-label" class="text-sm text-sub text-center">Waiting…</div>
-    <button class="btn btn-secondary btn--full btn--sm hidden" id="docked-word-btn">👁 My Word</button>
-    <button class="btn btn-primary btn--full btn--sm hidden"  id="docked-vote-btn">Cast Vote</button>
     <div class="text-xs text-muted text-center" id="docked-meta"></div>
   </div>
 </div>
@@ -54,51 +48,32 @@
     </div>
   </header>
 
-  <!-- Screens (only one visible at a time) -->
+  <!-- Screens -->
 
-  <!-- ── LOBBY ──────────────────────────────────────────── -->
+  <!-- ── 1. LOBBY ──────────────────────────────────────────── -->
   <div id="screen-lobby" class="screen animate-in">
     <div class="container py-6">
       <div class="flex items-center justify-between mb-4">
         <div>
           <h2>Waiting Room</h2>
-          <p class="text-sm text-sub mt-2">Share the room code to invite others</p>
+          <p class="text-sm text-sub mt-2">Share the code to invite your teammates</p>
         </div>
         <span class="badge badge-neutral" id="lobby-player-count">0 joined</span>
-      </div>
-
-      <!-- Host settings (host only) -->
-      <div class="card card-body mb-4 hidden" id="host-settings">
-        <div class="flex items-center justify-between mb-3">
-          <h3>Round Settings</h3>
-          <span class="badge badge-accent text-xs">Host</span>
-        </div>
-        <div class="setting-row mb-3">
-          <label class="text-sm text-sub mb-2" style="display:block">Discussion Timer</label>
-          <div class="timer-options" id="timer-options">
-            <button class="timer-opt" data-seconds="60">1 min</button>
-            <button class="timer-opt" data-seconds="120">2 min</button>
-            <button class="timer-opt active" data-seconds="180">3 min</button>
-            <button class="timer-opt" data-seconds="300">5 min</button>
-            <button class="timer-opt" data-seconds="420">7 min</button>
-            <button class="timer-opt" data-seconds="0">∞</button>
-          </div>
-        </div>
       </div>
 
       <!-- Player list -->
       <div class="card card-body mb-4">
         <div class="flex items-center justify-between mb-3">
           <h3>Participants</h3>
-          <span class="text-xs text-muted">Max 15</span>
+          <span class="text-xs text-muted">Order of Clues</span>
         </div>
         <div id="lobby-players" class="player-list"></div>
       </div>
 
-      <!-- Start button (host) / waiting (others) -->
+      <!-- Start button (host) / waiting (guest) -->
       <div id="host-start-wrap" class="hidden">
         <button class="btn btn-primary btn--full btn--lg" id="btn-start">
-          Start Round 1
+          Start Game
         </button>
         <p class="text-xs text-muted text-center mt-3">Need at least 3 players to start</p>
       </div>
@@ -111,106 +86,93 @@
     </div>
   </div>
 
-  <!-- ── WORD REVEAL ────────────────────────────────────── -->
-  <div id="screen-word-reveal" class="screen animate-in">
-    <div class="container py-6">
-      <div class="text-center mb-6">
-        <span class="badge badge-accent mb-3" id="round-badge">Round 1</span>
-        <h2>Your Secret Word</h2>
-        <p class="text-sm text-sub mt-2">Tap the card to reveal. It hides after 5 seconds.</p>
+  <!-- ── 2. GAME ARENA (Word Peeking + Turn-based Chat) ─────── -->
+  <div id="screen-arena" class="screen animate-in hidden">
+    <div class="container py-4">
+      
+      <!-- Top info bar -->
+      <div class="arena-header mb-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="badge badge-accent" id="arena-round-badge">Round 1 of 2</span>
+            <span class="text-xs text-muted" id="arena-category"></span>
+          </div>
+          <button class="btn btn-ghost btn--sm text-xs text-danger" id="btn-host-force-vote">Go to Vote →</button>
+        </div>
       </div>
 
-      <div class="word-card" id="word-card">
-        <div class="word-card-inner">
-          <div class="word-card-front">
-            <div class="word-card-tap-hint">
-              <span class="word-card-icon">👁</span>
-              <span class="text-sm text-sub">Tap to reveal your word</span>
-            </div>
+      <!-- 🔒 SECURE HOLD-TO-REVEAL WORD CARD -->
+      <div class="secret-word-container mb-4">
+        <div class="secret-word-card" id="hold-word-card">
+          <div class="word-peek-unrevealed" id="word-peek-hidden">
+            <span class="lock-icon">🔒</span>
+            <span class="hold-text">Hold to Peek Secret Word</span>
+            <span class="hold-subtext">Release to immediately hide from prying eyes</span>
           </div>
-          <div class="word-card-back">
-            <div class="word-display ml-text" id="word-display">–</div>
-            <div class="word-en text-sub" id="word-en-display">–</div>
-            <div class="word-hide-countdown" id="word-hide-countdown">Hiding in 5s</div>
+          <div class="word-peek-revealed hidden" id="word-peek-shown">
+            <div class="revealed-tag">YOUR SECRET WORD</div>
+            <div class="word-display ml-text" id="arena-word-text">–</div>
+            <div class="word-en-sub" id="arena-word-en">–</div>
+            <div class="role-badge-tag" id="arena-role-tag"></div>
           </div>
         </div>
       </div>
 
-      <div class="category-pill text-center mt-4" id="category-display"></div>
-
-      <div class="role-hint mt-4 hidden" id="imposter-hint">
-        <div class="role-hint-card role-hint--imposter">
-          <span class="role-hint-icon">🕵️</span>
-          <div>
-            <div class="font-bold" style="color:var(--danger)">You are the Imposter!</div>
-            <div class="text-sm text-sub mt-1">Your word is <em>similar</em> but different. Blend in — don't get caught!</div>
-          </div>
-        </div>
-      </div>
-      <div class="role-hint mt-4 hidden" id="player-hint">
-        <div class="role-hint-card">
-          <span class="role-hint-icon">👤</span>
-          <div>
-            <div class="font-bold">You are a Regular Player</div>
-            <div class="text-sm text-sub mt-1">Everyone has the same word — except the imposter(s).</div>
-          </div>
-        </div>
+      <!-- Turn Order Strip -->
+      <div class="turn-strip-card card card-body--sm mb-3">
+        <div class="turn-strip-title text-xs text-muted mb-2">Turn Order:</div>
+        <div class="turn-player-strip" id="turn-players-strip"></div>
       </div>
 
-      <button class="btn btn-primary btn--full mt-6" id="btn-ready">
-        ✓ I've Seen My Word
-      </button>
-      <div class="text-xs text-muted text-center mt-3" id="ready-status">
-        Waiting for others to be ready…
+      <!-- Clue Chat Area -->
+      <div class="chat-card card mb-3">
+        <div class="chat-header">
+          <span class="text-xs font-bold text-sub">CLUE LOG</span>
+          <span class="text-xs text-muted" id="turn-status-banner">Waiting...</span>
+        </div>
+        <div class="chat-messages" id="clue-chat-messages">
+          <!-- Messages will stream here -->
+        </div>
+
+        <!-- Live Typing indicator bar -->
+        <div class="typing-indicator-bar hidden" id="typing-indicator-bar">
+          <div class="typing-dots"><span></span><span></span><span></span></div>
+          <span class="typing-text" id="typing-player-name">Player is typing a clue...</span>
+        </div>
+
+        <!-- Clue Input Bar -->
+        <form class="chat-input-bar" id="clue-form">
+          <input
+            type="text"
+            id="clue-input"
+            class="input clue-text-input"
+            placeholder="Waiting for your turn..."
+            maxlength="60"
+            autocomplete="off"
+            disabled
+          >
+          <button type="submit" class="btn btn-primary btn--sm" id="btn-send-clue" disabled>Send</button>
+        </form>
       </div>
+
     </div>
   </div>
 
-  <!-- ── DISCUSSION ─────────────────────────────────────── -->
-  <div id="screen-discussion" class="screen animate-in">
+  <!-- ── 3. VOTING SCREEN ─────────────────────────────────── -->
+  <div id="screen-voting" class="screen animate-in hidden">
     <div class="container py-6">
-      <div class="text-center mb-4">
-        <span class="badge badge-accent mb-3" id="disc-round-badge">Round 1</span>
-        <h2>Discussion Time</h2>
-        <p class="text-sm text-sub mt-2">Talk it out — find the imposter!</p>
-      </div>
-
-      <!-- Timer -->
-      <div class="timer-card mb-4" id="timer-card">
-        <div class="timer-display" id="timer-display">3:00</div>
-        <div class="progress-bar-wrap mt-3">
-          <div class="progress-bar" id="timer-progress"></div>
-        </div>
-      </div>
-
-      <!-- Participants -->
-      <div class="card card-body mb-4">
-        <h3 class="mb-3">Participants</h3>
-        <div id="discussion-players" class="player-grid"></div>
-      </div>
-
-      <!-- Peek word -->
-      <button class="btn btn-secondary btn--full mb-3" id="btn-peek">
-        👁 Peek at My Word
-      </button>
-
-      <!-- Category hint -->
-      <div class="category-hint-bar" id="disc-category"></div>
-
-      <!-- Host: end discussion early -->
-      <button class="btn btn-ghost btn--full btn--sm mt-3 hidden" id="btn-end-discussion">
-        End Discussion Early
-      </button>
-    </div>
-  </div>
-
-  <!-- ── VOTING ──────────────────────────────────────────── -->
-  <div id="screen-voting" class="screen animate-in">
-    <div class="container py-6">
-      <div class="text-center mb-6">
-        <span class="badge badge-danger mb-3">Vote</span>
+      <div class="text-center mb-5">
+        <span class="badge badge-danger mb-2">Voting Phase</span>
         <h2>Who is the Imposter?</h2>
-        <p class="text-sm text-sub mt-2">Select the player you think is the imposter</p>
+        <p class="text-sm text-sub mt-1">Review the clues above and cast your vote</p>
+      </div>
+
+      <!-- Mini clue review toggle -->
+      <div class="card card-body--sm mb-4">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold text-muted">ROUND CLUES</span>
+        </div>
+        <div id="voting-clues-summary" class="voting-clues-log"></div>
       </div>
 
       <div id="vote-list" class="vote-list mb-4"></div>
@@ -220,21 +182,29 @@
       </div>
 
       <button class="btn btn-danger btn--full btn--lg" id="btn-cast-vote" disabled>
-        Cast Vote →
+        Submit Vote →
       </button>
+
+      <!-- Option for extra round if tied or unsure -->
+      <div class="text-center mt-4 hidden" id="extra-round-wrap">
+        <p class="text-xs text-sub mb-2">Tied or unsure who the imposter is?</p>
+        <button class="btn btn-secondary btn--sm" id="btn-request-extra-round">
+          + Play Extra Clue Round
+        </button>
+      </div>
     </div>
   </div>
 
-  <!-- ── RESULTS ─────────────────────────────────────────── -->
-  <div id="screen-results" class="screen animate-in">
+  <!-- ── 4. RESULTS & LEADERBOARD ────────────────────────── -->
+  <div id="screen-results" class="screen animate-in hidden">
     <div class="container py-6">
       <div class="text-center mb-4">
-        <span class="badge badge-neutral mb-3" id="results-round-badge">Round 1 Results</span>
+        <span class="badge badge-neutral mb-2" id="results-round-badge">Results</span>
       </div>
 
-      <!-- Eliminated reveal -->
+      <!-- Eliminated reveal card -->
       <div class="reveal-card mb-4" id="reveal-card">
-        <div class="reveal-label">Eliminated</div>
+        <div class="reveal-label">Most Voted Player</div>
         <div class="reveal-name" id="reveal-name">–</div>
         <div class="reveal-verdict" id="reveal-verdict"></div>
       </div>
@@ -242,19 +212,19 @@
       <!-- Word reveal -->
       <div class="words-reveal-row mb-4" id="words-reveal">
         <div class="word-reveal-item">
-          <div class="text-xs text-muted mb-1">Everyone's word</div>
+          <div class="text-xs text-muted mb-1">Everyone had</div>
           <div class="word-reveal-val ml-text" id="result-main-word">–</div>
         </div>
         <div class="word-reveal-divider">vs</div>
         <div class="word-reveal-item">
-          <div class="text-xs text-muted mb-1">Imposter's word</div>
+          <div class="text-xs text-muted mb-1">Imposter had</div>
           <div class="word-reveal-val word-reveal-val--imposter ml-text" id="result-imposter-word">–</div>
         </div>
       </div>
 
       <!-- Score changes this round -->
       <div class="card card-body mb-4" id="score-changes-card">
-        <h3 class="mb-3">This Round</h3>
+        <h3 class="mb-3">Points Earned This Round</h3>
         <div id="score-changes-list"></div>
       </div>
 
@@ -267,7 +237,7 @@
       <!-- Host controls -->
       <div id="host-result-controls" class="hidden flex gap-3">
         <button class="btn btn-secondary" style="flex:1" id="btn-end-game">End Game</button>
-        <button class="btn btn-primary" style="flex:1" id="btn-next-round">Next Round →</button>
+        <button class="btn btn-primary" style="flex:1" id="btn-next-round">Next Game →</button>
       </div>
       <div id="guest-result-waiting" class="hidden">
         <p class="text-center text-sub text-sm">Waiting for host…</p>
@@ -275,8 +245,8 @@
     </div>
   </div>
 
-  <!-- ── GAME OVER ──────────────────────────────────────── -->
-  <div id="screen-ended" class="screen animate-in">
+  <!-- ── 5. GAME OVER ────────────────────────────────────── -->
+  <div id="screen-ended" class="screen animate-in hidden">
     <div class="container py-8">
       <div class="text-center mb-6">
         <div style="font-size:3rem;margin-bottom:12px">🎉</div>
@@ -302,17 +272,6 @@
       <button class="btn btn-secondary" style="flex:1" id="kick-cancel">Cancel</button>
       <button class="btn btn-danger" style="flex:1" id="kick-confirm">Remove</button>
     </div>
-  </div>
-</div>
-
-<!-- ── Peek Word Modal ──────────────────────────────────── -->
-<div class="modal-overlay hidden" id="peek-modal">
-  <div class="modal" style="text-align:center">
-    <div class="text-xs text-muted mb-2">Your word</div>
-    <div class="word-display ml-text" id="peek-word-display" style="margin:0 auto 8px">–</div>
-    <div class="text-sub text-sm" id="peek-word-en">–</div>
-    <div class="text-xs text-muted mt-4" id="peek-hide-countdown">Closing in 5s</div>
-    <button class="btn btn-ghost btn--sm mt-3" id="peek-close">Close</button>
   </div>
 </div>
 

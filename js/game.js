@@ -1,18 +1,8 @@
 // ============================================================
-//  game.js — Full game logic for Sync Room / Imposter Game
+//  game.js — Clue Chat, Hold-to-Reveal & Turn-based Imposter Game
 // ============================================================
 (function () {
   'use strict';
-
-  // ── Config ────────────────────────────────────────────────
-  const TIMER_OPTIONS = [
-    { seconds: 60,  label: '1 min'   },
-    { seconds: 120, label: '2 min'   },
-    { seconds: 180, label: '3 min'   },
-    { seconds: 300, label: '5 min'   },
-    { seconds: 420, label: '7 min'   },
-    { seconds: 0,   label: 'No limit'},
-  ];
 
   const AVATAR_COLORS = [
     '#6366F1','#10B981','#F59E0B','#EF4444',
@@ -20,23 +10,19 @@
     '#14B8A6','#84CC16',
   ];
 
-  // ── State ────────────────────────────────────────────────
+  const TOTAL_DEFAULT_ROUNDS = 2; // 2 clue rounds before voting
+
   const ROOM_CODE = new URLSearchParams(window.location.search).get('room');
   const PLAYER_ID = getOrCreatePlayerId();
 
   let roomRef;
-  let currentRoom   = null;   // latest snapshot val
-  let myWord        = null;   // fetched once
-  let myRole        = null;   // 'player' | 'imposter'
+  let currentRoom   = null;
+  let myWord        = null;
+  let myRole        = null;
   let selectedVote  = null;
-  let timerInterval = null;
-  let wordRevealTimer = null;
-  let peekTimer     = null;
   let kickTarget    = null;
-  let selectedTimerSec = 180;
-  let readyConfirmed  = false;
+  let typingTimeout = null;
 
-  // ── Init ─────────────────────────────────────────────────
   if (!ROOM_CODE) { window.location.href = 'index.html'; return; }
 
   document.getElementById('header-room-code').textContent = ROOM_CODE;
@@ -44,16 +30,15 @@
   listenRoom();
   keepOnline();
 
-  // ── Firebase helpers ──────────────────────────────────────
+  // ── Firebase Helpers ──────────────────────────────────────
   function roomPath(subpath) {
     return subpath ? `rooms/${ROOM_CODE}/${subpath}` : `rooms/${ROOM_CODE}`;
   }
-
   function dbSet(path, val)    { return db.ref(path).set(val); }
   function dbUpdate(path, val) { return db.ref(path).update(val); }
   function dbGet(path)         { return db.ref(path).once('value'); }
 
-  // ── Listen to room (main loop) ─────────────────────────
+  // ── Room Listener ─────────────────────────────────────────
   function listenRoom() {
     roomRef = db.ref(roomPath());
     roomRef.on('value', snap => {
@@ -62,56 +47,63 @@
       render(currentRoom);
     });
 
-    // Listen for being kicked
     db.ref(roomPath('players/' + PLAYER_ID)).on('value', snap => {
       if (currentRoom && !snap.exists()) { kicked(); }
     });
   }
 
-  // ── Keep player online ───────────────────────────────────
   function keepOnline() {
     const onlineRef = db.ref(roomPath('players/' + PLAYER_ID + '/isOnline'));
     onlineRef.set(true);
     onlineRef.onDisconnect().set(false);
   }
 
-  // ── Render ───────────────────────────────────────────────
+  // ── Master Screen Switcher ────────────────────────────────
+  function showScreen(name) {
+    document.querySelectorAll('.screen').forEach(s => {
+      s.classList.remove('active');
+      s.classList.add('hidden');
+    });
+    const el = document.getElementById('screen-' + name);
+    if (el) {
+      el.classList.remove('hidden');
+      el.classList.add('active');
+    }
+  }
+
+  // ── Render Director ───────────────────────────────────────
   function render(room) {
     if (!room || !room.state) return;
 
     switch (room.state) {
-      case 'lobby':        renderLobby(room);       break;
-      case 'word_reveal':  renderWordReveal(room);  break;
-      case 'discussion':   renderDiscussion(room);  break;
-      case 'voting':       renderVoting(room);      break;
-      case 'results':      renderResults(room);     break;
-      case 'ended':        renderEnded(room);        break;
+      case 'lobby':   renderLobby(room);   break;
+      case 'arena':   renderArena(room);   break;
+      case 'voting':  renderVoting(room);  break;
+      case 'results': renderResults(room); break;
+      case 'ended':   renderEnded(room);   break;
     }
 
     updateDockedPanel(room);
   }
 
-  // ────────────────────────────────────────────────────────
-  // LOBBY
-  // ────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────
+  // 1. LOBBY
+  // ──────────────────────────────────────────────────────────
   function renderLobby(room) {
     showScreen('lobby');
 
-    const players    = room.players || {};
-    const playerArr  = objectToArray(players);
-    const isHost     = room.hostId === PLAYER_ID;
-    const count      = playerArr.length;
+    const players   = room.players || {};
+    const playerArr = objectToArray(players);
+    const isHost    = room.hostId === PLAYER_ID;
+    const count     = playerArr.length;
 
     document.getElementById('lobby-player-count').textContent = count + ' joined';
-    document.getElementById('host-settings').classList.toggle('hidden', !isHost);
     document.getElementById('host-start-wrap').classList.toggle('hidden', !isHost);
     document.getElementById('guest-waiting').classList.toggle('hidden', isHost);
 
-    // Start button state
     const btnStart = document.getElementById('btn-start');
     btnStart.disabled = count < 3;
 
-    // Render players
     const listEl = document.getElementById('lobby-players');
     listEl.innerHTML = '';
     playerArr.forEach((p, i) => {
@@ -130,7 +122,7 @@
             ${isMe   ? '<span class="me-badge">You</span>'   : ''}
             ${isHost2 ? '<span class="host-badge">Host</span>' : ''}
           </div>
-          <div class="player-meta">${p.isOnline ? '● Online' : '○ Away'}</div>
+          <div class="player-meta">${p.isOnline ? '● Online' : '○ Away'} · Order #${i + 1}</div>
         </div>
         <div class="player-actions">
           ${isHost && !isMe ? `<button class="kick-btn" data-id="${p.id}" data-name="${esc(p.name)}" title="Remove">✕</button>` : ''}
@@ -138,106 +130,144 @@
       listEl.appendChild(item);
     });
 
-    // Kick buttons
     listEl.querySelectorAll('.kick-btn').forEach(btn => {
       btn.addEventListener('click', () => openKickModal(btn.dataset.id, btn.dataset.name));
     });
   }
 
-  // ────────────────────────────────────────────────────────
-  // WORD REVEAL
-  // ────────────────────────────────────────────────────────
-  function renderWordReveal(room) {
-    showScreen('word-reveal');
+  // ──────────────────────────────────────────────────────────
+  // 2. GAME ARENA (Word Hold-to-Reveal + Turn Clues)
+  // ──────────────────────────────────────────────────────────
+  async function renderArena(room) {
+    showScreen('arena');
 
-    const round = room.round || 1;
-    document.getElementById('round-badge').textContent   = 'Round ' + round;
+    // Fetch secret word & role
+    await fetchMyWordAndRole();
 
-    // Fetch my word & role once per round
-    fetchMyWordAndRole(room);
+    // Round badge & category
+    const roundNumber = room.clueRound || 1;
+    const totalRounds = room.totalClueRounds || TOTAL_DEFAULT_ROUNDS;
+    document.getElementById('arena-round-badge').textContent = `Round ${roundNumber} of ${totalRounds}`;
 
-    // Ready state
-    const readyMap  = room.ready || {};
-    const players   = room.players || {};
-    const total     = Object.keys(players).length;
-    const readyCount= Object.keys(readyMap).length;
-    document.getElementById('ready-status').textContent =
-      `${readyCount} / ${total} ready`;
-
-    // Category (no spoiler)
     const pair = room.currentWordId ? getWordPairById(room.currentWordId) : null;
-    document.getElementById('category-display').textContent =
-      pair ? '📂 Category: ' + pair.category : '';
+    document.getElementById('arena-category').textContent = pair ? `Category: ${pair.category}` : '';
 
-    // If already confirmed ready, disable button
-    if (readyMap[PLAYER_ID]) {
-      document.getElementById('btn-ready').textContent = '✓ Ready!';
-      document.getElementById('btn-ready').disabled = true;
+    // Host force-vote button
+    const isHost = room.hostId === PLAYER_ID;
+    document.getElementById('btn-host-force-vote').classList.toggle('hidden', !isHost);
+
+    // Setup Turn Order Strip
+    const order = room.turnOrder || [];
+    const players = room.players || {};
+    const currentTurnPlayerId = order[room.currentTurnIndex || 0];
+
+    const stripEl = document.getElementById('turn-players-strip');
+    stripEl.innerHTML = '';
+    order.forEach((pid, idx) => {
+      const p = players[pid];
+      if (!p) return;
+      const chip = document.createElement('div');
+      const isCurrentTurn = pid === currentTurnPlayerId;
+      const isPastTurn    = idx < (room.currentTurnIndex || 0);
+
+      chip.className = 'turn-chip' +
+        (isCurrentTurn ? ' active-turn' : '') +
+        (isPastTurn ? ' completed-turn' : '');
+
+      chip.innerHTML = `
+        <span>#${idx + 1}</span>
+        <span>${esc(p.name)}${pid === PLAYER_ID ? ' (You)' : ''}</span>
+      `;
+      stripEl.appendChild(chip);
+    });
+
+    // Render Clues in Chat
+    const chatEl = document.getElementById('clue-chat-messages');
+    const clues = room.clues || [];
+    if (clues.length === 0) {
+      chatEl.innerHTML = `<div class="chat-empty">Round 1 beginning. Give a one-word or short clue about your secret word!</div>`;
+    } else {
+      chatEl.innerHTML = '';
+      clues.forEach(c => {
+        const bubble = document.createElement('div');
+        const isMine = c.playerId === PLAYER_ID;
+        bubble.className = 'clue-bubble ' + (isMine ? 'mine' : 'theirs');
+        bubble.innerHTML = `
+          <div class="clue-sender-meta">
+            <span>${esc(c.playerName)}</span>
+            <span>· Round ${c.round}</span>
+          </div>
+          <div class="clue-text">${esc(c.text)}</div>
+        `;
+        chatEl.appendChild(bubble);
+      });
+      chatEl.scrollTop = chatEl.scrollHeight;
     }
 
-    // Host auto-advances when everyone is ready
-    if (room.hostId === PLAYER_ID && readyCount >= total && total > 0) {
-      startDiscussion();
+    // Live typing indicator
+    const typingBar = document.getElementById('typing-indicator-bar');
+    const typingPlayerId = room.typingPlayerId;
+    if (typingPlayerId && typingPlayerId !== PLAYER_ID && players[typingPlayerId]) {
+      typingBar.classList.remove('hidden');
+      document.getElementById('typing-player-name').textContent = `${players[typingPlayerId].name} is typing a clue...`;
+    } else {
+      typingBar.classList.add('hidden');
+    }
+
+    // Turn banner & input state
+    const isMyTurn = currentTurnPlayerId === PLAYER_ID;
+    const clueInput = document.getElementById('clue-input');
+    const sendBtn   = document.getElementById('btn-send-clue');
+    const statusBanner = document.getElementById('turn-status-banner');
+
+    if (isMyTurn) {
+      statusBanner.textContent = "👉 YOUR TURN to give a clue!";
+      statusBanner.style.color = "var(--accent)";
+      clueInput.disabled = false;
+      clueInput.placeholder = "Type your clue here and press Enter...";
+      sendBtn.disabled = false;
+      clueInput.focus();
+    } else {
+      const activeName = players[currentTurnPlayerId]?.name || 'player';
+      statusBanner.textContent = `Waiting for ${activeName}...`;
+      statusBanner.style.color = "var(--text-muted)";
+      clueInput.disabled = true;
+      clueInput.placeholder = `Waiting for ${activeName}'s clue...`;
+      sendBtn.disabled = true;
     }
   }
 
-  async function fetchMyWordAndRole(room) {
-    if (myWord !== null) return; // already fetched this round
-
+  // ──────────────────────────────────────────────────────────
+  // FETCH WORD & ROLE
+  // ──────────────────────────────────────────────────────────
+  async function fetchMyWordAndRole() {
+    if (myWord !== null) return;
     const wordSnap = await dbGet(roomPath('words/' + PLAYER_ID));
     const roleSnap = await dbGet(roomPath('roles/' + PLAYER_ID));
-
     myWord = wordSnap.val();
     myRole = roleSnap.val();
 
-    // Show role hint
-    document.getElementById('imposter-hint').classList.toggle('hidden', myRole !== 'imposter');
-    document.getElementById('player-hint').classList.toggle('hidden',   myRole !== 'player');
+    if (myWord) {
+      const { word, wordEn } = parseWord(myWord);
+      document.getElementById('arena-word-text').textContent = word;
+      document.getElementById('arena-word-en').textContent   = wordEn;
+    }
+
+    const roleTag = document.getElementById('arena-role-tag');
+    if (myRole === 'imposter') {
+      roleTag.className = 'role-badge-tag imposter';
+      roleTag.textContent = '🕵️ YOU ARE THE IMPOSTER!';
+    } else {
+      roleTag.className = 'role-badge-tag player';
+      roleTag.textContent = '👤 Regular Player';
+    }
   }
 
-  // ────────────────────────────────────────────────────────
-  // DISCUSSION
-  // ────────────────────────────────────────────────────────
-  function renderDiscussion(room) {
-    showScreen('discussion');
-
-    const round = room.round || 1;
-    document.getElementById('disc-round-badge').textContent = 'Round ' + round;
-
-    // Players grid
-    const players   = room.players || {};
-    const playerArr = objectToArray(players);
-    const gridEl    = document.getElementById('discussion-players');
-    gridEl.innerHTML = '';
-    playerArr.forEach((p, i) => {
-      const color   = AVATAR_COLORS[i % AVATAR_COLORS.length];
-      const initial = (p.name || '?')[0].toUpperCase();
-      const chip    = document.createElement('div');
-      chip.className = 'player-chip';
-      chip.innerHTML = `
-        <div class="player-avatar" style="background:${color};width:32px;height:32px;font-size:.8rem">${initial}</div>
-        <div class="player-chip-name">${esc(p.name)}</div>`;
-      gridEl.appendChild(chip);
-    });
-
-    // Category hint
-    const pair = room.currentWordId ? getWordPairById(room.currentWordId) : null;
-    document.getElementById('disc-category').textContent =
-      pair ? '📂 Category: ' + pair.category : '';
-
-    // Host controls
-    document.getElementById('btn-end-discussion').classList.toggle('hidden', room.hostId !== PLAYER_ID);
-
-    // Timer
-    startTimerDisplay(room.timerEnd, room.timerDuration);
-  }
-
-  // ────────────────────────────────────────────────────────
-  // VOTING
-  // ────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────
+  // 3. VOTING
+  // ──────────────────────────────────────────────────────────
   function renderVoting(room) {
     showScreen('voting');
-    stopTimer();
 
     const players   = room.players || {};
     const playerArr = objectToArray(players);
@@ -246,6 +276,14 @@
 
     if (myVote) selectedVote = myVote;
 
+    // Mini Clue Summary
+    const clueSummaryEl = document.getElementById('voting-clues-summary');
+    const clues = room.clues || [];
+    clueSummaryEl.innerHTML = clues.map(c => `
+      <div><strong>${esc(c.playerName)}:</strong> "${esc(c.text)}" <span style="color:var(--text-muted);font-size:.7rem">(R${c.round})</span></div>
+    `).join('') || '<div class="text-muted">No clues logged.</div>';
+
+    // Vote List
     const listEl = document.getElementById('vote-list');
     listEl.innerHTML = '';
 
@@ -274,19 +312,19 @@
       listEl.appendChild(item);
     });
 
-    // Vote status
     const voteCount  = Object.keys(votes).length;
     const totalCount = playerArr.length;
-    document.getElementById('vote-status').textContent =
-      `${voteCount} / ${totalCount} voted`;
+    document.getElementById('vote-status').textContent = `${voteCount} / ${totalCount} voted`;
 
-    // Enable cast button if selection made and not yet voted
     const castBtn = document.getElementById('btn-cast-vote');
     castBtn.disabled = !selectedVote || !!myVote;
-    if (myVote) castBtn.textContent = '✓ Vote Cast';
+    if (myVote) castBtn.textContent = '✓ Vote Submitted';
 
-    // Host tallies when all voted
-    if (room.hostId === PLAYER_ID && voteCount >= totalCount) {
+    // Show extra round option for host or any player
+    document.getElementById('extra-round-wrap').classList.remove('hidden');
+
+    // Host tallies when everyone voted
+    if (room.hostId === PLAYER_ID && voteCount >= totalCount && totalCount > 0) {
       tallyVotes(room);
     }
   }
@@ -299,28 +337,22 @@
     document.getElementById('btn-cast-vote').disabled = false;
   }
 
-  // ────────────────────────────────────────────────────────
-  // RESULTS
-  // ────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────
+  // 4. RESULTS
+  // ──────────────────────────────────────────────────────────
   function renderResults(room) {
     showScreen('results');
-    stopTimer();
 
     const results = room.results || {};
     const players = room.players || {};
-    const round   = room.round || 1;
 
-    document.getElementById('results-round-badge').textContent = `Round ${round} Results`;
-
-    // Eliminated card
     const elim      = players[results.eliminatedId] || {};
     const revCard   = document.getElementById('reveal-card');
     revCard.className = 'reveal-card ' + (results.wasImposter ? 'is-imposter' : 'not-imposter');
-    document.getElementById('reveal-name').textContent    = elim.name || '?';
+    document.getElementById('reveal-name').textContent    = elim.name || 'No consensus';
     document.getElementById('reveal-verdict').textContent = results.wasImposter
       ? '🕵️ Was the Imposter!' : '✅ Was NOT the Imposter';
 
-    // Word reveal
     const pair = results.wordId ? getWordPairById(results.wordId) : null;
     if (pair) {
       document.getElementById('result-main-word').innerHTML =
@@ -329,7 +361,6 @@
         `${pair.imposter} <span style="font-size:.75rem;font-weight:400;color:var(--text-muted)">(${pair.imposterEn})</span>`;
     }
 
-    // Score changes
     const scoreChanges = results.scoreChanges || {};
     const scListEl     = document.getElementById('score-changes-list');
     scListEl.innerHTML = '';
@@ -337,55 +368,54 @@
       const delta  = scoreChanges[p.id] || 0;
       const reason = delta > 0
         ? (results.wasImposter
-            ? (results.eliminatedId === p.id ? '' : '✓ Correct vote')
-            : (results.eliminatedId === p.id ? '🕵️ Survived undetected' : ''))
+            ? (results.eliminatedId === p.id ? '' : '✓ Voted for imposter (+2)')
+            : (results.eliminatedId === p.id ? '🕵️ Imposter survived undetected (+3)' : ''))
         : '';
       const item = document.createElement('div');
       item.className = 'score-change-item';
       item.innerHTML = `
         <div class="score-change-name">${esc(p.name)}</div>
         <div>
-          <div class="score-change-delta ${delta > 0 ? 'positive' : 'zero'}">${delta > 0 ? '+' + delta : '–'}</div>
+          <div class="score-change-delta ${delta > 0 ? 'positive' : 'zero'}">${delta > 0 ? '+' + delta : '0'}</div>
           <div class="score-change-reason">${reason}</div>
         </div>`;
       scListEl.appendChild(item);
     });
 
-    // Leaderboard
     renderLeaderboard(players, 'leaderboard-list');
 
-    // Host controls
     document.getElementById('host-result-controls').classList.toggle('hidden', room.hostId !== PLAYER_ID);
     document.getElementById('guest-result-waiting').classList.toggle('hidden', room.hostId === PLAYER_ID);
   }
 
-  // ────────────────────────────────────────────────────────
-  // ENDED
-  // ────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────
+  // 5. GAME OVER
+  // ──────────────────────────────────────────────────────────
   function renderEnded(room) {
     showScreen('ended');
-    stopTimer();
     renderLeaderboard(room.players || {}, 'final-leaderboard');
   }
 
-  // ────────────────────────────────────────────────────────
-  // HOST ACTIONS
-  // ────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────
+  // ACTIONS: START GAME & TURN FLOW
+  // ──────────────────────────────────────────────────────────
   async function startGame() {
     if (!currentRoom || currentRoom.hostId !== PLAYER_ID) return;
     const players   = currentRoom.players || {};
     const playerArr = objectToArray(players);
-    if (playerArr.length < 3) { showToast('Need at least 3 players!', 'warning'); return; }
+    if (playerArr.length < 3) { showToast('Need at least 3 players to start!', 'warning'); return; }
 
     const pair = pickNextWordPair(ROOM_CODE);
     const round = (currentRoom.round || 0) + 1;
 
-    // Determine imposter count
+    // Imposter calculation
     const imposterCount = playerArr.length >= 10 ? 2 : 1;
     const shuffled      = shuffleArr([...playerArr]);
     const imposters     = shuffled.slice(0, imposterCount).map(p => p.id);
 
-    // Assign roles & words
+    // Turn order is determined by join order or shuffled
+    const turnOrder = playerArr.map(p => p.id);
+
     const rolesUpdate = {};
     const wordsUpdate = {};
     playerArr.forEach(p => {
@@ -396,71 +426,154 @@
         : (pair.main     + ' (' + pair.mainEn     + ')');
     });
 
-    // Clear ready, votes, results from previous round
-    await dbSet(roomPath('roles'),   rolesUpdate);
-    await dbSet(roomPath('words'),   wordsUpdate);
-    await dbSet(roomPath('ready'),   null);
-    await dbSet(roomPath('votes'),   null);
-    await dbSet(roomPath('results'), null);
-
-    // Reset per-player myWord/myRole cache
     myWord = null;
     myRole = null;
-    readyConfirmed = false;
+    selectedVote = null;
+
+    await dbSet(roomPath('roles'), rolesUpdate);
+    await dbSet(roomPath('words'), wordsUpdate);
+    await dbSet(roomPath('votes'), null);
+    await dbSet(roomPath('clues'), []);
 
     await dbUpdate(roomPath(), {
-      state:         'word_reveal',
+      state:            'arena',
       round,
-      currentWordId: pair.id,
-      timerDuration: selectedTimerSec,
-      timerEnd:      null,
+      clueRound:        1,
+      totalClueRounds:  TOTAL_DEFAULT_ROUNDS,
+      turnOrder,
+      currentTurnIndex: 0,
+      currentWordId:    pair.id,
+      typingPlayerId:   null,
     });
   }
 
-  async function startDiscussion() {
-    if (!currentRoom || currentRoom.hostId !== PLAYER_ID) return;
-    const duration = selectedTimerSec;
-    const timerEnd = duration > 0 ? Date.now() + duration * 1000 : null;
-    await dbUpdate(roomPath(), { state: 'discussion', timerEnd });
+  async function sendClue(e) {
+    if (e) e.preventDefault();
+    const input = document.getElementById('clue-input');
+    const text  = input.value.trim();
+    if (!text) return;
+
+    const order = currentRoom.turnOrder || [];
+    const currentIndex = currentRoom.currentTurnIndex || 0;
+    if (order[currentIndex] !== PLAYER_ID) {
+      showToast('Not your turn!', 'warning');
+      return;
+    }
+
+    input.value = '';
+    input.disabled = true;
+
+    // Clear typing status
+    await dbSet(roomPath('typingPlayerId'), null);
+
+    const clueItem = {
+      playerId:   PLAYER_ID,
+      playerName: currentRoom.players[PLAYER_ID]?.name || 'Player',
+      text,
+      round:      currentRoom.clueRound || 1,
+      timestamp:  Date.now(),
+    };
+
+    const clues = currentRoom.clues || [];
+    clues.push(clueItem);
+
+    // Advance turn
+    let nextIndex = currentIndex + 1;
+    let nextClueRound = currentRoom.clueRound || 1;
+    let nextState = 'arena';
+
+    if (nextIndex >= order.length) {
+      // Completed one full round of clues
+      if (nextClueRound < (currentRoom.totalClueRounds || TOTAL_DEFAULT_ROUNDS)) {
+        nextClueRound++;
+        nextIndex = 0;
+      } else {
+        // All clue rounds finished -> Proceed to voting!
+        nextState = 'voting';
+      }
+    }
+
+    await dbUpdate(roomPath(), {
+      clues,
+      currentTurnIndex: nextIndex,
+      clueRound:        nextClueRound,
+      state:            nextState,
+      typingPlayerId:   null,
+    });
   }
 
-  async function startVoting() {
+  // Live typing broadcaster
+  function onClueInputTyping() {
+    clearTimeout(typingTimeout);
+    dbSet(roomPath('typingPlayerId'), PLAYER_ID);
+    typingTimeout = setTimeout(() => {
+      dbSet(roomPath('typingPlayerId'), null);
+    }, 2500);
+  }
+
+  // Request Extra Clue Round (if tied / unsure)
+  async function requestExtraRound() {
+    if (!currentRoom) return;
+    const currentTotal = currentRoom.totalClueRounds || TOTAL_DEFAULT_ROUNDS;
+    const newTotal = currentTotal + 1;
+
+    showToast(`Adding Extra Clue Round ${newTotal}!`, 'success');
+
+    await dbUpdate(roomPath(), {
+      state:            'arena',
+      clueRound:        newTotal,
+      totalClueRounds:  newTotal,
+      currentTurnIndex: 0,
+      votes:            null,
+    });
+  }
+
+  async function forceVote() {
     if (!currentRoom || currentRoom.hostId !== PLAYER_ID) return;
-    await dbUpdate(roomPath(), { state: 'voting', timerEnd: null });
+    await dbUpdate(roomPath(), { state: 'voting' });
+  }
+
+  async function castVote() {
+    if (!selectedVote) return;
+    await dbSet(roomPath('votes/' + PLAYER_ID), selectedVote);
+    document.getElementById('btn-cast-vote').textContent = '✓ Vote Submitted';
+    document.getElementById('btn-cast-vote').disabled    = true;
   }
 
   async function tallyVotes(room) {
-    // Find most-voted player
     const votes   = room.votes   || {};
     const players = room.players || {};
     const roles   = room.roles   || {};
-    const pair    = getWordPairById(room.currentWordId);
 
     const tally = {};
     Object.values(votes).forEach(targetId => {
       tally[targetId] = (tally[targetId] || 0) + 1;
     });
 
-    const eliminatedId = Object.entries(tally).sort((a, b) => b[1] - a[1])[0]?.[0];
-    const wasImposter  = roles[eliminatedId] === 'imposter';
+    const sortedVotes = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+    const topVote = sortedVotes[0];
+    const secondVote = sortedVotes[1];
 
-    // Score changes
+    // Check if there is a tie for the most votes
+    const isTie = topVote && secondVote && (topVote[1] === secondVote[1]);
+
+    const eliminatedId = isTie ? null : topVote?.[0];
+    const wasImposter  = eliminatedId ? (roles[eliminatedId] === 'imposter') : false;
+
     const scoreChanges = {};
     const updates      = {};
 
-    Object.keys(players).forEach(pid => {
-      scoreChanges[pid] = 0;
-    });
+    Object.keys(players).forEach(pid => { scoreChanges[pid] = 0; });
 
     if (wasImposter) {
-      // Correct voters get +2
+      // Regular players who voted correctly get +2
       Object.entries(votes).forEach(([voterId, targetId]) => {
         if (targetId === eliminatedId && roles[voterId] !== 'imposter') {
           scoreChanges[voterId] = (scoreChanges[voterId] || 0) + 2;
         }
       });
     } else {
-      // Imposter(s) survive — get +3
+      // Imposter survived (or tie where imposter wasn't caught) -> Imposter gets +3
       Object.entries(roles).forEach(([pid, role]) => {
         if (role === 'imposter') {
           scoreChanges[pid] = (scoreChanges[pid] || 0) + 3;
@@ -468,7 +581,6 @@
       });
     }
 
-    // Apply scores
     Object.keys(players).forEach(pid => {
       updates[`players/${pid}/score`] =
         (players[pid].score || 0) + (scoreChanges[pid] || 0);
@@ -480,6 +592,7 @@
       wordId:       room.currentWordId,
       scoreChanges,
       votes:        tally,
+      isTie,
     };
     updates['state'] = 'results';
 
@@ -490,9 +603,8 @@
     if (!currentRoom || currentRoom.hostId !== PLAYER_ID) return;
     myWord = null;
     myRole = null;
-    readyConfirmed = false;
-    selectedVote   = null;
-    await dbUpdate(roomPath(), { state: 'lobby', timerEnd: null });
+    selectedVote = null;
+    await dbUpdate(roomPath(), { state: 'lobby' });
   }
 
   async function endGame() {
@@ -506,133 +618,79 @@
     showToast('Player removed.', 'success');
   }
 
-  // ────────────────────────────────────────────────────────
-  // PLAYER ACTIONS
-  // ────────────────────────────────────────────────────────
-  function revealWord() {
-    if (!myWord) return;
+  // ──────────────────────────────────────────────────────────
+  // 🔒 SECURE HOLD-TO-REVEAL WORD LOGIC
+  // ──────────────────────────────────────────────────────────
+  function setupHoldToReveal() {
+    const card = document.getElementById('hold-word-card');
+    const hiddenEl = document.getElementById('word-peek-hidden');
+    const shownEl  = document.getElementById('word-peek-shown');
 
-    const card = document.getElementById('word-card');
-    card.classList.add('flipped');
-
-    // Parse word display
-    const { word, wordEn } = parseWord(myWord);
-    document.getElementById('word-display').textContent    = word;
-    document.getElementById('word-en-display').textContent = wordEn;
-
-    // Countdown
-    let countdown = 5;
-    document.getElementById('word-hide-countdown').textContent = `Hiding in ${countdown}s`;
-    clearInterval(wordRevealTimer);
-    wordRevealTimer = setInterval(() => {
-      countdown--;
-      document.getElementById('word-hide-countdown').textContent =
-        countdown > 0 ? `Hiding in ${countdown}s` : 'Hidden';
-      if (countdown <= 0) {
-        clearInterval(wordRevealTimer);
-        card.classList.remove('flipped');
-      }
-    }, 1000);
-  }
-
-  async function markReady() {
-    if (readyConfirmed) return;
-    readyConfirmed = true;
-    await dbSet(roomPath('ready/' + PLAYER_ID), true);
-    document.getElementById('btn-ready').textContent = '✓ Ready!';
-    document.getElementById('btn-ready').disabled    = true;
-  }
-
-  async function castVote() {
-    if (!selectedVote) return;
-    await dbSet(roomPath('votes/' + PLAYER_ID), selectedVote);
-    document.getElementById('btn-cast-vote').textContent = '✓ Vote Cast';
-    document.getElementById('btn-cast-vote').disabled    = true;
-  }
-
-  function peekWord() {
-    if (!myWord) { showToast('Word not loaded yet.', 'warning'); return; }
-    const { word, wordEn } = parseWord(myWord);
-    document.getElementById('peek-word-display').textContent = word;
-    document.getElementById('peek-word-en').textContent      = wordEn;
-
-    const modal = document.getElementById('peek-modal');
-    modal.classList.remove('hidden');
-
-    let countdown = 5;
-    document.getElementById('peek-hide-countdown').textContent = `Closing in ${countdown}s`;
-    clearInterval(peekTimer);
-    peekTimer = setInterval(() => {
-      countdown--;
-      document.getElementById('peek-hide-countdown').textContent =
-        countdown > 0 ? `Closing in ${countdown}s` : 'Closed';
-      if (countdown <= 0) {
-        clearInterval(peekTimer);
-        modal.classList.add('hidden');
-      }
-    }, 1000);
-  }
-
-  function closePeek() {
-    clearInterval(peekTimer);
-    document.getElementById('peek-modal').classList.add('hidden');
-  }
-
-  // ────────────────────────────────────────────────────────
-  // TIMER
-  // ────────────────────────────────────────────────────────
-  function startTimerDisplay(timerEnd, duration) {
-    stopTimer();
-    if (!timerEnd) {
-      // No-limit mode
-      document.getElementById('timer-display').textContent = '∞';
-      document.getElementById('timer-progress').style.width = '100%';
-      return;
+    function onHoldStart(e) {
+      if (e.cancelable) e.preventDefault();
+      card.classList.add('pressing');
+      hiddenEl.classList.add('hidden');
+      shownEl.classList.remove('hidden');
     }
 
-    function tick() {
-      const remaining = Math.max(0, Math.ceil((timerEnd - Date.now()) / 1000));
-      const mins      = Math.floor(remaining / 60);
-      const secs      = remaining % 60;
-      const display   = `${mins}:${secs.toString().padStart(2, '0')}`;
-      const pct       = duration > 0 ? (remaining / duration) * 100 : 100;
-
-      const timerEl    = document.getElementById('timer-display');
-      const progressEl = document.getElementById('timer-progress');
-      const dockedEl   = document.getElementById('docked-timer');
-
-      timerEl.textContent  = display;
-      if (dockedEl) dockedEl.textContent = display;
-      progressEl.style.width = pct + '%';
-
-      const urgent  = remaining <= 30;
-      const warning = remaining <= 60 && remaining > 30;
-
-      timerEl.className    = 'timer-display' + (urgent ? ' urgent' : warning ? ' warning' : '');
-      progressEl.className = 'progress-bar'  + (urgent ? ' urgent' : warning ? ' warning' : '');
-      if (dockedEl) dockedEl.className = 'docked-timer' + (urgent ? ' urgent' : '');
-
-      if (remaining === 0) {
-        stopTimer();
-        // Host transitions to voting
-        if (currentRoom && currentRoom.hostId === PLAYER_ID) {
-          startVoting();
-        }
-      }
+    function onHoldEnd() {
+      card.classList.remove('pressing');
+      shownEl.classList.add('hidden');
+      hiddenEl.classList.remove('hidden');
     }
 
-    tick();
-    timerInterval = setInterval(tick, 1000);
+    // Touch events for mobile
+    card.addEventListener('touchstart', onHoldStart, { passive: false });
+    card.addEventListener('touchend', onHoldEnd);
+    card.addEventListener('touchcancel', onHoldEnd);
+
+    // Mouse events for desktop
+    card.addEventListener('mousedown', onHoldStart);
+    card.addEventListener('mouseup', onHoldEnd);
+    card.addEventListener('mouseleave', onHoldEnd);
   }
 
-  function stopTimer() {
-    clearInterval(timerInterval);
-    timerInterval = null;
+  // ──────────────────────────────────────────────────────────
+  // STATIC LISTENERS
+  // ──────────────────────────────────────────────────────────
+  function attachStaticListeners() {
+    setupHoldToReveal();
+
+    document.getElementById('btn-share').addEventListener('click', shareRoom);
+    document.getElementById('btn-dock').addEventListener('click', toggleDock);
+    document.getElementById('btn-undock').addEventListener('click', toggleDock);
+
+    document.getElementById('btn-start').addEventListener('click', startGame);
+
+    // Clue Form & Typing
+    document.getElementById('clue-form').addEventListener('submit', sendClue);
+    document.getElementById('clue-input').addEventListener('input', onClueInputTyping);
+
+    // Force Vote & Extra Round
+    document.getElementById('btn-host-force-vote').addEventListener('click', forceVote);
+    document.getElementById('btn-request-extra-round').addEventListener('click', requestExtraRound);
+
+    // Voting
+    document.getElementById('btn-cast-vote').addEventListener('click', castVote);
+
+    // Results
+    document.getElementById('btn-next-round').addEventListener('click', nextRound);
+    document.getElementById('btn-end-game').addEventListener('click', endGame);
+
+    // Kick modal
+    document.getElementById('kick-cancel').addEventListener('click', closeKickModal);
+    document.getElementById('kick-confirm').addEventListener('click', () => {
+      if (kickTarget) kickPlayer(kickTarget);
+      closeKickModal();
+    });
+    document.getElementById('kick-modal').addEventListener('click', e => {
+      if (e.target === document.getElementById('kick-modal')) closeKickModal();
+    });
   }
 
-  // ────────────────────────────────────────────────────────
-  // KICK MODAL
-  // ────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────
+  // UTILITIES
+  // ──────────────────────────────────────────────────────────
   function openKickModal(id, name) {
     kickTarget = id;
     document.getElementById('kick-modal-name').textContent = `Remove "${name}" from the room?`;
@@ -644,67 +702,32 @@
     kickTarget = null;
   }
 
-  // ────────────────────────────────────────────────────────
-  // SHARE
-  // ────────────────────────────────────────────────────────
   function shareRoom() {
-    const url = window.location.origin + window.location.pathname + '?room=' + ROOM_CODE;
+    const url = window.location.origin + window.location.pathname.replace('game.html','') + 'index.html?room=' + ROOM_CODE;
     if (navigator.share) {
-      navigator.share({ title: 'Join my Sync Room', url }).catch(() => {});
+      navigator.share({ title: 'Join Sync Room', url }).catch(() => {});
     } else {
-      navigator.clipboard.writeText(url).then(() => showToast('Link copied!', 'success'));
+      navigator.clipboard.writeText(url).then(() => showToast('Link copied to clipboard!', 'success'));
     }
   }
 
-  // ────────────────────────────────────────────────────────
-  // DOCK MODE
-  // ────────────────────────────────────────────────────────
-  function toggleDock() {
-    document.body.classList.toggle('docked');
-  }
+  function toggleDock() { document.body.classList.toggle('docked'); }
 
   function updateDockedPanel(room) {
     const stateLabel = document.getElementById('docked-state-label');
-    const wordBtn    = document.getElementById('docked-word-btn');
-    const voteBtn    = document.getElementById('docked-vote-btn');
     const meta       = document.getElementById('docked-meta');
-
-    const players = room.players || {};
-    const count   = Object.keys(players).length;
-    meta.textContent = `Rnd ${room.round || 1} · ${count} 👤`;
-
-    wordBtn.classList.add('hidden');
-    voteBtn.classList.add('hidden');
+    const count      = Object.keys(room.players || {}).length;
+    meta.textContent = `${count} Participants`;
 
     switch (room.state) {
-      case 'lobby':
-        stateLabel.textContent = 'Lobby — Waiting';
-        document.getElementById('docked-timer').textContent = '--:--';
-        break;
-      case 'word_reveal':
-        stateLabel.textContent = 'Reveal your word';
-        wordBtn.classList.remove('hidden');
-        break;
-      case 'discussion':
-        stateLabel.textContent = 'Discussion';
-        wordBtn.classList.remove('hidden');
-        break;
-      case 'voting':
-        stateLabel.textContent = 'Voting';
-        voteBtn.classList.remove('hidden');
-        break;
-      case 'results':
-        stateLabel.textContent = 'Results';
-        break;
-      case 'ended':
-        stateLabel.textContent = 'Game Over';
-        break;
+      case 'lobby':   stateLabel.textContent = 'Waiting in Lobby'; break;
+      case 'arena':   stateLabel.textContent = `Clue Round ${room.clueRound || 1}`; break;
+      case 'voting':  stateLabel.textContent = 'Voting Phase'; break;
+      case 'results': stateLabel.textContent = 'Results'; break;
+      case 'ended':   stateLabel.textContent = 'Game Ended'; break;
     }
   }
 
-  // ────────────────────────────────────────────────────────
-  // LEADERBOARD
-  // ────────────────────────────────────────────────────────
   function renderLeaderboard(players, containerId) {
     const el      = document.getElementById(containerId);
     const sorted  = objectToArray(players).sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -728,98 +751,15 @@
     }).join('');
   }
 
-  // ────────────────────────────────────────────────────────
-  // KICKED
-  // ────────────────────────────────────────────────────────
   function kicked() {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById('main-content').innerHTML = `
-      <div class="kicked-screen animate-in">
-        <div style="font-size:3rem">👋</div>
+      <div class="kicked-screen animate-in" style="padding:40px 20px;text-align:center">
+        <div style="font-size:3rem;margin-bottom:12px">👋</div>
         <h2>You've been removed</h2>
         <p class="text-sub">The host removed you from this room.</p>
         <a class="btn btn-primary mt-4" href="index.html">← Back to Home</a>
       </div>`;
-  }
-
-  // ────────────────────────────────────────────────────────
-  // STATIC EVENT LISTENERS
-  // ────────────────────────────────────────────────────────
-  function attachStaticListeners() {
-    // Header
-    document.getElementById('btn-share').addEventListener('click', shareRoom);
-    document.getElementById('btn-dock').addEventListener('click', toggleDock);
-    document.getElementById('btn-undock').addEventListener('click', toggleDock);
-
-    // Lobby
-    document.getElementById('btn-start').addEventListener('click', startGame);
-
-    // Timer options
-    document.getElementById('timer-options').addEventListener('click', e => {
-      const opt = e.target.closest('.timer-opt');
-      if (!opt) return;
-      document.querySelectorAll('.timer-opt').forEach(o => o.classList.remove('active'));
-      opt.classList.add('active');
-      selectedTimerSec = parseInt(opt.dataset.seconds, 10);
-      if (currentRoom) {
-        dbUpdate(roomPath(), { timerDuration: selectedTimerSec });
-      }
-    });
-
-    // Word reveal
-    document.getElementById('word-card').addEventListener('click', revealWord);
-    document.getElementById('btn-ready').addEventListener('click', markReady);
-
-    // Discussion
-    document.getElementById('btn-peek').addEventListener('click', peekWord);
-    document.getElementById('btn-end-discussion').addEventListener('click', startVoting);
-
-    // Voting
-    document.getElementById('btn-cast-vote').addEventListener('click', castVote);
-
-    // Results
-    document.getElementById('btn-next-round').addEventListener('click', nextRound);
-    document.getElementById('btn-end-game').addEventListener('click', endGame);
-
-    // Kick modal
-    document.getElementById('kick-cancel').addEventListener('click', closeKickModal);
-    document.getElementById('kick-confirm').addEventListener('click', () => {
-      if (kickTarget) kickPlayer(kickTarget);
-      closeKickModal();
-    });
-    document.getElementById('kick-modal').addEventListener('click', e => {
-      if (e.target === document.getElementById('kick-modal')) closeKickModal();
-    });
-
-    // Peek modal
-    document.getElementById('peek-close').addEventListener('click', closePeek);
-    document.getElementById('peek-modal').addEventListener('click', e => {
-      if (e.target === document.getElementById('peek-modal')) closePeek();
-    });
-
-    // Docked word/vote buttons
-    document.getElementById('docked-word-btn').addEventListener('click', () => {
-      toggleDock();
-      setTimeout(peekWord, 300);
-    });
-    document.getElementById('docked-vote-btn').addEventListener('click', () => {
-      toggleDock();
-    });
-  }
-
-  // ────────────────────────────────────────────────────────
-  // UTILITIES
-  // ────────────────────────────────────────────────────────
-  function showScreen(name) {
-    document.querySelectorAll('.screen').forEach(s => {
-      s.classList.remove('active');
-      s.classList.add('hidden');
-    });
-    const el = document.getElementById('screen-' + name);
-    if (el) {
-      el.classList.remove('hidden');
-      el.classList.add('active');
-    }
   }
 
   function objectToArray(obj) {
@@ -846,7 +786,6 @@
   }
 
   function parseWord(wordStr) {
-    // Format stored: "word (English)" or just "word"
     const match = wordStr.match(/^(.+?)\s*\((.+)\)$/);
     if (match) return { word: match[1].trim(), wordEn: match[2].trim() };
     return { word: wordStr, wordEn: '' };
