@@ -5,6 +5,30 @@
 (function () {
   'use strict';
 
+  // ── Init Kerala Avatar Picker ────────────────────────────────
+  function initAvatarPicker() {
+    const container = document.getElementById('avatar-picker');
+    if (!container || typeof KERALA_AVATARS === 'undefined') return;
+
+    let savedAvatar = localStorage.getItem('syncroom_avatar') || KERALA_AVATARS[0].id;
+    document.getElementById('selected-avatar-id').value = savedAvatar;
+
+    container.innerHTML = '';
+    KERALA_AVATARS.forEach(avatar => {
+      const el = document.createElement('div');
+      el.className = 'avatar-choice-item' + (avatar.id === savedAvatar ? ' selected' : '');
+      el.title = avatar.name;
+      el.innerHTML = avatar.svg;
+      el.addEventListener('click', () => {
+        document.querySelectorAll('.avatar-choice-item').forEach(i => i.classList.remove('selected'));
+        el.classList.add('selected');
+        document.getElementById('selected-avatar-id').value = avatar.id;
+        localStorage.setItem('syncroom_avatar', avatar.id);
+      });
+      container.appendChild(el);
+    });
+  }
+
   // ── Helpers ──────────────────────────────────────────────────
   function genRoomCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
@@ -132,8 +156,11 @@
       createdAt:     now,
     });
 
+    const avatarId = document.getElementById('selected-avatar-id')?.value || 'chetan-meesha';
+
     await db.ref('rooms/' + code + '/players/' + playerId).set({
       name,
+      avatar:    avatarId,
       score:     0,
       isOnline:  true,
       joinedAt:  now,
@@ -180,8 +207,11 @@
       return;
     }
 
+    const avatarId = document.getElementById('selected-avatar-id')?.value || 'chetan-meesha';
+
     await db.ref('rooms/' + rawCode + '/players/' + playerId).set({
       name,
+      avatar:   avatarId,
       score:    0,
       isOnline: true,
       joinedAt: Date.now(),
@@ -226,6 +256,7 @@
   });
 
   // ── Init ──────────────────────────────────────────────────────
+  initAvatarPicker();
   checkDirectLink();
   loadRecentRooms();
 

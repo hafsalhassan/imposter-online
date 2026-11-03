@@ -82,8 +82,6 @@
       case 'results': renderResults(room); break;
       case 'ended':   renderEnded(room);   break;
     }
-
-    updateDockedPanel(room);
   }
 
   // ──────────────────────────────────────────────────────────
@@ -114,13 +112,12 @@
     playerArr.forEach((p, i) => {
       const item = document.createElement('div');
       item.className = 'player-item';
-      const initial = (p.name || '?')[0].toUpperCase();
-      const color   = AVATAR_COLORS[i % AVATAR_COLORS.length];
       const isMe    = p.id === PLAYER_ID;
       const isHost2 = p.id === room.hostId;
+      const avatarSvg = getAvatarSvg(p.avatar);
 
       item.innerHTML = `
-        <div class="player-avatar" style="background:${color}">${initial}</div>
+        <div class="avatar-bubble">${avatarSvg}</div>
         <div class="player-info">
           <div class="player-name">
             ${esc(p.name)}
@@ -174,14 +171,15 @@
       const chip = document.createElement('div');
       const isCurrentTurn = pid === currentTurnPlayerId;
       const isPastTurn    = idx < (room.currentTurnIndex || 0);
+      const avatarSvg     = getAvatarSvg(p.avatar);
 
       chip.className = 'turn-chip' +
         (isCurrentTurn ? ' active-turn' : '') +
         (isPastTurn ? ' completed-turn' : '');
 
       chip.innerHTML = `
-        <span>#${idx + 1}</span>
-        <span>${esc(p.name)}${pid === PLAYER_ID ? ' (You)' : ''}</span>
+        <span class="avatar-bubble" style="width:20px;height:20px">${avatarSvg}</span>
+        <span>#${idx + 1} ${esc(p.name)}${pid === PLAYER_ID ? ' (You)' : ''}</span>
       `;
       stripEl.appendChild(chip);
     });
@@ -311,6 +309,7 @@
     playerArr.forEach((p, i) => {
       const isMe = p.id === PLAYER_ID;
       const hasVoted = !!votes[p.id];
+      const avatarSvg = getAvatarSvg(p.avatar);
 
       const item = document.createElement('div');
       item.className = 'vote-item' +
@@ -318,12 +317,9 @@
         (selectedVote === p.id   ? ' selected'  : '');
       item.dataset.targetId = p.id;
 
-      const color   = AVATAR_COLORS[i % AVATAR_COLORS.length];
-      const initial = (p.name || '?')[0].toUpperCase();
-
       item.innerHTML = `
         <div class="vote-radio"></div>
-        <div class="player-avatar" style="background:${color};width:32px;height:32px;font-size:.8rem">${initial}</div>
+        <div class="avatar-bubble" style="width:34px;height:34px">${avatarSvg}</div>
         <div class="vote-name">${esc(p.name)}${isMe ? ' <span class="me-badge">You</span>' : ''}</div>
         ${hasVoted ? '<span class="vote-submitted">✓ voted</span>' : ''}`;
 
@@ -702,8 +698,6 @@
     setupHoldToReveal();
 
     document.getElementById('btn-share').addEventListener('click', shareRoom);
-    document.getElementById('btn-dock').addEventListener('click', toggleDock);
-    document.getElementById('btn-undock').addEventListener('click', toggleDock);
 
     document.getElementById('btn-start').addEventListener('click', startGame);
 
@@ -756,23 +750,6 @@
     }
   }
 
-  function toggleDock() { document.body.classList.toggle('docked'); }
-
-  function updateDockedPanel(room) {
-    const stateLabel = document.getElementById('docked-state-label');
-    const meta       = document.getElementById('docked-meta');
-    const count      = Object.keys(room.players || {}).length;
-    meta.textContent = `${count} Participants`;
-
-    switch (room.state) {
-      case 'lobby':   stateLabel.textContent = 'Waiting in Lobby'; break;
-      case 'arena':   stateLabel.textContent = `Clue Round ${room.clueRound || 1}`; break;
-      case 'voting':  stateLabel.textContent = 'Voting Phase'; break;
-      case 'results': stateLabel.textContent = 'Results'; break;
-      case 'ended':   stateLabel.textContent = 'Game Ended'; break;
-    }
-  }
-
   function renderLeaderboard(players, containerId) {
     const el      = document.getElementById(containerId);
     const sorted  = objectToArray(players).sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -782,9 +759,11 @@
       const rankClass = i < 3 ? medals[i] : '';
       const rankLabel = i < 3 ? ['🥇','🥈','🥉'][i] : (i + 1) + '.';
       const isMe      = p.id === PLAYER_ID;
+      const avatarSvg = getAvatarSvg(p.avatar);
       return `
         <div class="lb-item">
           <div class="lb-rank ${rankClass}">${rankLabel}</div>
+          <div class="avatar-bubble" style="width:28px;height:28px;margin-right:6px">${avatarSvg}</div>
           <div class="lb-info">
             <div class="lb-name">${esc(p.name)}${isMe ? ' <span class="me-badge">You</span>' : ''}</div>
           </div>

@@ -17,21 +17,6 @@
 <!-- ── Toast ──────────────────────────────────────────────── -->
 <div id="toast-container"></div>
 
-<!-- ── Docked Panel (desktop sidebar mode) ──────────────── -->
-<div class="docked-panel" id="docked-panel">
-  <div class="docked-header">
-    <span class="app-logo" style="font-size:.875rem">
-      <span class="app-logo-icon" style="width:22px;height:22px;font-size:.7rem">◈</span>
-      Sync Room
-    </span>
-    <button class="btn btn-ghost btn--sm" id="btn-undock" title="Expand">⊞</button>
-  </div>
-  <div class="docked-body">
-    <div id="docked-state-label" class="text-sm text-sub text-center">Waiting…</div>
-    <div class="text-xs text-muted text-center" id="docked-meta"></div>
-  </div>
-</div>
-
 <!-- ── Main content ──────────────────────────────────────── -->
 <div class="main-content" id="main-content">
 
@@ -44,7 +29,6 @@
     <div class="flex items-center gap-2">
       <span class="room-code-pill" id="header-room-code">----</span>
       <button class="btn btn-ghost btn--sm" id="btn-share" title="Share room link">↗</button>
-      <button class="btn btn-ghost btn--sm" id="btn-dock" title="Dock to sidebar">⊟</button>
     </div>
   </header>
 
@@ -327,6 +311,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 <script src="js/firebase-config.js"></script>
+<script src="js/avatars.js"></script>
 <script src="js/words.js"></script>
 <script src="js/game.js"></script>
 </body>
