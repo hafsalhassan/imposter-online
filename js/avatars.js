@@ -2,7 +2,8 @@
 //  avatars.js — Flat Minimal Gaming Animal Avatars
 // ============================================================
 
-const ANIMAL_AVATARS = [
+if (typeof window.ANIMAL_AVATARS === 'undefined') {
+  window.ANIMAL_AVATARS = [
   {
     id: "fox",
     name: "Fox 🦊",
@@ -97,7 +98,7 @@ const ANIMAL_AVATARS = [
       <circle cx="39" cy="48" r="3" fill="#18181B"/>
       <circle cx="61" cy="48" r="3" fill="#18181B"/>
       <circle cx="40" cy="47" r="1" fill="#FFFFFF"/>
-      <circle cx="62" cy="47" r="1" fill="#FFFFFF"/>
+      <circle cx="62" cy="47" r="1.8" fill="#FFFFFF"/>
     </svg>`
   },
   {
@@ -190,9 +191,13 @@ const ANIMAL_AVATARS = [
       <circle cx="66" cy="58" r="3.5" fill="#FBCFE8"/>
     </svg>`
   }
-];
+  ];
+}
+
+var ANIMAL_AVATARS = window.ANIMAL_AVATARS;
 
 function getAvatarSvg(avatarId) {
+  if (typeof ANIMAL_AVATARS === 'undefined' || !Array.isArray(ANIMAL_AVATARS)) return '';
   const match = ANIMAL_AVATARS.find(a => a.id === avatarId);
   return match ? match.svg : ANIMAL_AVATARS[0].svg;
 }

@@ -21,24 +21,16 @@
   const TOTAL_DEFAULT_ROUNDS = 2; // 2 clue rounds before voting
 
   const urlParams = new URLSearchParams(window.location.search);
-  const ROOM_CODE = urlParams.get('room');
-  // First check URL param for PID (100% reliable across tabs & devices!)
-  const PLAYER_ID = urlParams.get('pid') || getOrCreatePlayerId();
-
-  let roomRef;
-  let currentRoom   = null;
-  let myWord        = null;
-  let myRole        = null;
-  let selectedVote  = null;
-  let kickTarget    = null;
-  let typingTimeout = null;
+  const ROOM_CODE = (urlParams.get('room') || '').toUpperCase().trim();
+  const PLAYER_ID = urlParams.get('pid') || sessionStorage.getItem('syncroom_player_id') || ('p_' + Math.random().toString(36).slice(2, 8));
 
   if (!ROOM_CODE) { window.location.href = 'index.html'; return; }
 
-  // Ensure PID is stored
-  sessionStorage.setItem('syncroom_player_id', PLAYER_ID);
+  // Immediately display room code in header!
+  const headerCodeEl = document.getElementById('header-room-code');
+  if (headerCodeEl) headerCodeEl.textContent = ROOM_CODE;
 
-  document.getElementById('header-room-code').textContent = ROOM_CODE;
+  sessionStorage.setItem('syncroom_player_id', PLAYER_ID);
   attachStaticListeners();
   listenRoom();
   keepOnline();
