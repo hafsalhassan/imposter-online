@@ -42,10 +42,9 @@
   }
 
   function getOrCreatePlayerId() {
-    // Check sessionStorage first so multiple tabs on same browser get unique players!
     let id = sessionStorage.getItem('syncroom_player_id');
     if (!id) {
-      id = genPlayerId();
+      id = 'p_' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3);
       sessionStorage.setItem('syncroom_player_id', id);
     }
     return id;
@@ -172,7 +171,7 @@
 
     saveRecentRoom(code, name);
     localStorage.setItem('syncroom_name', name);
-    window.location.href = 'game.html?room=' + code;
+    window.location.href = 'game.html?room=' + code + '&pid=' + playerId;
   }
 
   // ── Join room ─────────────────────────────────────────────────
@@ -223,7 +222,7 @@
 
     saveRecentRoom(rawCode, name);
     localStorage.setItem('syncroom_name', name);
-    window.location.href = 'game.html?room=' + rawCode;
+    window.location.href = 'game.html?room=' + rawCode + '&pid=' + playerId;
   }
 
   // ── Check if landing with ?room= param (direct link) ─────────

@@ -12,8 +12,10 @@
 
   const TOTAL_DEFAULT_ROUNDS = 2; // 2 clue rounds before voting
 
-  const ROOM_CODE = new URLSearchParams(window.location.search).get('room');
-  const PLAYER_ID = getOrCreatePlayerId();
+  const urlParams = new URLSearchParams(window.location.search);
+  const ROOM_CODE = urlParams.get('room');
+  // First check URL param for PID (100% reliable across tabs & devices!)
+  const PLAYER_ID = urlParams.get('pid') || getOrCreatePlayerId();
 
   let roomRef;
   let currentRoom   = null;
@@ -24,6 +26,9 @@
   let typingTimeout = null;
 
   if (!ROOM_CODE) { window.location.href = 'index.html'; return; }
+
+  // Ensure PID is stored
+  sessionStorage.setItem('syncroom_player_id', PLAYER_ID);
 
   document.getElementById('header-room-code').textContent = ROOM_CODE;
   attachStaticListeners();
@@ -47,15 +52,27 @@
       render(currentRoom);
     });
 
+    // Only trigger kick if the player was previously in the room with a name and is now removed
     db.ref(roomPath('players/' + PLAYER_ID)).on('value', snap => {
-      if (currentRoom && !snap.exists()) { kicked(); }
+      if (currentRoom && currentRoom.players && !snap.exists()) {
+        const wasInRoom = Object.keys(currentRoom.players).includes(PLAYER_ID);
+        if (wasInRoom) {
+          kicked();
+        }
+      }
     });
   }
 
   function keepOnline() {
-    const onlineRef = db.ref(roomPath('players/' + PLAYER_ID + '/isOnline'));
-    onlineRef.set(true);
-    onlineRef.onDisconnect().set(false);
+    const playerRef = db.ref(roomPath('players/' + PLAYER_ID));
+    playerRef.once('value').then(snap => {
+      // Only keep online if player actually exists with a name!
+      if (snap.exists() && snap.val()?.name) {
+        const onlineRef = db.ref(roomPath('players/' + PLAYER_ID + '/isOnline'));
+        onlineRef.set(true);
+        onlineRef.onDisconnect().set(false);
+      }
+    });
   }
 
   // ── Setup Lobby Profile & Avatar Picker ───────────────────
@@ -473,8 +490,12 @@
   async function startGame() {
     if (!currentRoom || currentRoom.hostId !== PLAYER_ID) return;
     const players   = currentRoom.players || {};
+    // Only include real active players with valid names
     const playerArr = objectToArray(players);
-    if (playerArr.length < 3) { showToast('Need at least 3 players to start!', 'warning'); return; }
+    if (playerArr.length < 3) {
+      showToast('Need at least 3 active players to start!', 'warning');
+      return;
+    }
 
     // Read Host Choices
     const catSelect = document.getElementById('host-category-select');
@@ -492,7 +513,7 @@
     const shuffled      = shuffleArr([...playerArr]);
     const imposters     = shuffled.slice(0, imposterCount).map(p => p.id);
 
-    // Turn order is determined by join order or shuffled
+    // Turn order strictly from valid player IDs
     const turnOrder = playerArr.map(p => p.id);
 
     const rolesUpdate = {};
@@ -841,11 +862,12 @@
   }
 
   function shareRoom() {
-    const url = window.location.origin + window.location.pathname.replace('game.html','') + 'index.html?room=' + ROOM_CODE;
+    const baseUrl = window.location.origin + window.location.pathname.replace('game.html','');
+    const url = baseUrl + 'index.html?room=' + ROOM_CODE;
     if (navigator.share) {
       navigator.share({ title: 'Join Sync Room', url }).catch(() => {});
     } else {
-      navigator.clipboard.writeText(url).then(() => showToast('Link copied to clipboard!', 'success'));
+      navigator.clipboard.writeText(url).then(() => showToast('Invite link copied!', 'success'));
     }
   }
 
@@ -887,7 +909,10 @@
 
   function objectToArray(obj) {
     if (!obj) return [];
-    return Object.entries(obj).map(([id, val]) => ({ id, ...val }));
+    // ONLY include real players who have a valid name! Exclude ghost accounts!
+    return Object.entries(obj)
+      .filter(([id, val]) => val && typeof val === 'object' && val.name && val.name.trim().length > 0)
+      .map(([id, val]) => ({ id, ...val }));
   }
 
   function esc(str) {
