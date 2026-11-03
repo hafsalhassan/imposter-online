@@ -4,6 +4,15 @@
 function initGame() {
   'use strict';
 
+  // ── Global Scope Variables for Game Instance ───────────────
+  let roomRef = null;
+  let currentRoom = null;
+  let myWord = null;
+  let myRole = null;
+  let selectedVote = null;
+  let kickTarget = null;
+  let typingTimeout = null;
+
   // ── Safe Avatar Svg Getter (Flat Gaming Animal Avatars) ───
   function getSafeAvatarSvg(avatarId) {
     if (typeof getAvatarSvg === 'function') {
@@ -21,15 +30,31 @@ function initGame() {
 
   const urlParams = new URLSearchParams(window.location.search);
   const ROOM_CODE = (urlParams.get('room') || '').toUpperCase().trim();
-  const PLAYER_ID = urlParams.get('pid') || sessionStorage.getItem('syncroom_player_id') || ('p_' + Math.random().toString(36).slice(2, 8));
 
-  if (!ROOM_CODE) { window.location.href = 'index.html'; return; }
+  if (!ROOM_CODE) {
+    window.location.href = 'index.html';
+    return;
+  }
 
-  // Immediately display room code in header
+  // Immediately display room code in header & title
   const headerCodeEl = document.getElementById('header-room-code');
-  if (headerCodeEl) headerCodeEl.textContent = ROOM_CODE;
+  if (headerCodeEl) {
+    headerCodeEl.textContent = ROOM_CODE;
+    headerCodeEl.title = 'Click to copy invite link';
+    headerCodeEl.style.cursor = 'pointer';
+    headerCodeEl.onclick = shareRoom;
+  }
+  document.title = `Sync Room — ${ROOM_CODE}`;
 
+  // Dedicated session storage key per room to avoid multi-tab collisions on same browser
+  const tabPlayerKey = `syncroom_pid_${ROOM_CODE}`;
+  let PLAYER_ID = urlParams.get('pid') || sessionStorage.getItem(tabPlayerKey) || sessionStorage.getItem('syncroom_player_id');
+  if (!PLAYER_ID) {
+    PLAYER_ID = 'p_' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3);
+  }
+  sessionStorage.setItem(tabPlayerKey, PLAYER_ID);
   sessionStorage.setItem('syncroom_player_id', PLAYER_ID);
+
   attachStaticListeners();
   listenRoom();
   keepOnline();
@@ -45,9 +70,32 @@ function initGame() {
   // ── Room Listener ─────────────────────────────────────────
   function listenRoom() {
     roomRef = db.ref(roomPath());
-    roomRef.on('value', snap => {
-      if (!snap.exists()) { kicked(); return; }
+    roomRef.on('value', async snap => {
+      if (!snap.exists()) {
+        kicked();
+        return;
+      }
       currentRoom = snap.val();
+
+      // If user joined with URL but isn't yet recorded in players
+      if (!currentRoom.players || !currentRoom.players[PLAYER_ID] || !currentRoom.players[PLAYER_ID].name) {
+        const savedName = localStorage.getItem('syncroom_name');
+        if (savedName && currentRoom.state === 'lobby') {
+          const savedAvatar = localStorage.getItem('syncroom_avatar') || 'fox';
+          await db.ref(roomPath('players/' + PLAYER_ID)).set({
+            name: savedName,
+            avatar: savedAvatar,
+            score: 0,
+            isOnline: true,
+            joinedAt: Date.now()
+          });
+          return;
+        } else if (!savedName && currentRoom.state === 'lobby') {
+          window.location.href = 'index.html?room=' + ROOM_CODE;
+          return;
+        }
+      }
+
       render(currentRoom);
     });
 
@@ -65,7 +113,6 @@ function initGame() {
   function keepOnline() {
     const playerRef = db.ref(roomPath('players/' + PLAYER_ID));
     playerRef.once('value').then(snap => {
-      // Only keep online if player actually exists with a name!
       if (snap.exists() && snap.val()?.name) {
         const onlineRef = db.ref(roomPath('players/' + PLAYER_ID + '/isOnline'));
         onlineRef.set(true);
@@ -88,20 +135,27 @@ function initGame() {
       nameInput.value = myPlayer.name;
     }
 
-    container.innerHTML = '';
-    ANIMAL_AVATARS.forEach(avatar => {
-      const el = document.createElement('div');
-      el.className = 'avatar-choice-item' + (avatar.id === myCurrentAvatar ? ' selected' : '');
-      el.title = avatar.name;
-      el.innerHTML = avatar.svg;
-      el.addEventListener('click', async () => {
-        document.querySelectorAll('#lobby-avatar-picker .avatar-choice-item').forEach(i => i.classList.remove('selected'));
-        el.classList.add('selected');
-        localStorage.setItem('syncroom_avatar', avatar.id);
-        await dbUpdate(roomPath('players/' + PLAYER_ID), { avatar: avatar.id });
+    if (container.children.length === 0) {
+      container.innerHTML = '';
+      ANIMAL_AVATARS.forEach(avatar => {
+        const el = document.createElement('div');
+        el.className = 'avatar-choice-item' + (avatar.id === myCurrentAvatar ? ' selected' : '');
+        el.dataset.avatarId = avatar.id;
+        el.title = avatar.name;
+        el.innerHTML = avatar.svg;
+        el.addEventListener('click', async () => {
+          document.querySelectorAll('#lobby-avatar-picker .avatar-choice-item').forEach(i => i.classList.remove('selected'));
+          el.classList.add('selected');
+          localStorage.setItem('syncroom_avatar', avatar.id);
+          await dbUpdate(roomPath('players/' + PLAYER_ID), { avatar: avatar.id });
+        });
+        container.appendChild(el);
       });
-      container.appendChild(el);
-    });
+    } else {
+      container.querySelectorAll('.avatar-choice-item').forEach(el => {
+        el.classList.toggle('selected', el.dataset.avatarId === myCurrentAvatar);
+      });
+    }
   }
 
   async function saveEditedName() {
@@ -115,6 +169,7 @@ function initGame() {
     await dbUpdate(roomPath('players/' + PLAYER_ID), { name: newName });
     showToast('Name updated!', 'success');
   }
+
   function showScreen(name) {
     document.querySelectorAll('.screen').forEach(s => {
       s.classList.remove('active');
@@ -171,7 +226,7 @@ function initGame() {
       item.className = 'player-item';
       const isMe    = p.id === PLAYER_ID;
       const isHost2 = p.id === room.hostId;
-      const avatarSvg = getAvatarSvg(p.avatar);
+      const avatarSvg = getSafeAvatarSvg(p.avatar);
 
       item.innerHTML = `
         <div class="avatar-bubble">${avatarSvg}</div>
@@ -315,7 +370,7 @@ function initGame() {
   // FETCH WORD & ROLE (Clean Secret Card)
   // ──────────────────────────────────────────────────────────
   async function fetchMyWordAndRole() {
-    if (myWord !== null) return;
+    if (myWord !== null && myRole !== null) return;
     const wordSnap = await dbGet(roomPath('words/' + PLAYER_ID));
     const roleSnap = await dbGet(roomPath('roles/' + PLAYER_ID));
     myWord = wordSnap.val();
@@ -326,19 +381,25 @@ function initGame() {
     const roleTag    = document.getElementById('arena-role-tag');
     const revealedTag = document.getElementById('arena-revealed-tag');
 
-    roleTag.className = 'role-badge-tag hidden';
-    roleTag.textContent = '';
+    if (roleTag) {
+      roleTag.className = 'role-badge-tag hidden';
+      roleTag.textContent = '';
+    }
 
     if (myRole === 'imposter') {
-      revealedTag.textContent = 'YOUR ROLE';
-      wordTextEl.textContent = 'IMPOSTER';
-      wordTextEl.style.color = 'var(--danger)';
-      wordEnEl.textContent = 'You have NO word! Fake your clues & blend in.';
+      if (revealedTag) revealedTag.textContent = 'YOUR ROLE';
+      if (wordTextEl) {
+        wordTextEl.textContent = 'IMPOSTER';
+        wordTextEl.style.color = 'var(--danger)';
+      }
+      if (wordEnEl) wordEnEl.textContent = 'You have NO word! Blend in and guess.';
     } else {
-      revealedTag.textContent = 'YOUR SECRET WORD';
-      wordTextEl.textContent = myWord || '–';
-      wordTextEl.style.color = 'var(--text)';
-      wordEnEl.textContent = '';
+      if (revealedTag) revealedTag.textContent = 'YOUR SECRET WORD';
+      if (wordTextEl) {
+        wordTextEl.textContent = myWord || '–';
+        wordTextEl.style.color = 'var(--text)';
+      }
+      if (wordEnEl) wordEnEl.textContent = '';
     }
   }
 
@@ -357,7 +418,8 @@ function initGame() {
 
     // Mini Clue Summary
     const clueSummaryEl = document.getElementById('voting-clues-summary');
-    const clues = room.clues || [];
+    const rawClues = room.clues || [];
+    const clues = Array.isArray(rawClues) ? rawClues : Object.values(rawClues);
     clueSummaryEl.innerHTML = clues.map(c => `
       <div><strong>${esc(c.playerName)}:</strong> "${esc(c.text)}" <span style="color:var(--text-muted);font-size:.7rem">(R${c.round})</span></div>
     `).join('') || '<div class="text-muted">No clues logged.</div>';
@@ -369,7 +431,7 @@ function initGame() {
     playerArr.forEach((p, i) => {
       const isMe = p.id === PLAYER_ID;
       const hasVoted = !!votes[p.id];
-      const avatarSvg = getAvatarSvg(p.avatar);
+      const avatarSvg = getSafeAvatarSvg(p.avatar);
 
       const item = document.createElement('div');
       item.className = 'vote-item' +
@@ -400,8 +462,13 @@ function initGame() {
     // Show extra round option for host or any player
     document.getElementById('extra-round-wrap').classList.remove('hidden');
 
+    // Host controls in voting
+    const isHost = (room.hostId === PLAYER_ID);
+    const forceTallyBtn = document.getElementById('btn-host-force-tally');
+    if (forceTallyBtn) forceTallyBtn.classList.toggle('hidden', !isHost);
+
     // Host tallies when everyone voted
-    if (room.hostId === PLAYER_ID && voteCount >= totalCount && totalCount > 0) {
+    if (isHost && voteCount >= totalCount && totalCount > 0) {
       tallyVotes(room);
     }
   }
@@ -441,11 +508,15 @@ function initGame() {
     scListEl.innerHTML = '';
     objectToArray(players).forEach(p => {
       const delta  = scoreChanges[p.id] || 0;
-      const reason = delta > 0
-        ? (results.wasImposter
-            ? (results.eliminatedId === p.id ? '' : '✓ Voted for imposter (+2)')
-            : (results.eliminatedId === p.id ? '🕵️ Imposter survived undetected (+3)' : ''))
-        : '';
+      const isImposter = (room.roles && room.roles[p.id] === 'imposter');
+      let reason = '';
+      if (delta > 0) {
+        if (results.wasImposter) {
+          reason = (p.id === results.eliminatedId) ? '' : '✓ Voted for imposter (+2)';
+        } else {
+          reason = isImposter ? '🕵️ Imposter survived (+3)' : '';
+        }
+      }
       const item = document.createElement('div');
       item.className = 'score-change-item';
       item.innerHTML = `
@@ -459,8 +530,9 @@ function initGame() {
 
     renderLeaderboard(players, 'leaderboard-list');
 
-    document.getElementById('host-result-controls').classList.toggle('hidden', room.hostId !== PLAYER_ID);
-    document.getElementById('guest-result-waiting').classList.toggle('hidden', room.hostId === PLAYER_ID);
+    const isHost = room.hostId === PLAYER_ID;
+    document.getElementById('host-result-controls').classList.toggle('hidden', !isHost);
+    document.getElementById('guest-result-waiting').classList.toggle('hidden', isHost);
   }
 
   // ──────────────────────────────────────────────────────────
@@ -477,7 +549,6 @@ function initGame() {
   async function startGame() {
     if (!currentRoom || currentRoom.hostId !== PLAYER_ID) return;
     const players   = currentRoom.players || {};
-    // Only include real active players with valid names
     const playerArr = objectToArray(players);
     if (playerArr.length < 3) {
       showToast('Need at least 3 active players to start!', 'warning');
@@ -488,10 +559,7 @@ function initGame() {
     const catSelect = document.getElementById('host-category-select');
     const selectedCategory = catSelect ? catSelect.value : 'ALL';
 
-    const modeRadio = document.querySelector('input[name="imposter-mode"]:checked');
-    const imposterMode = modeRadio ? modeRadio.value : 'similar'; // 'similar' or 'blind'
-
-    // Pick Word using selected Category from new JSON format
+    // Pick Word using selected Category
     const pickedWordObj = pickNextWord(ROOM_CODE, selectedCategory);
     const round = (currentRoom.round || 0) + 1;
 
@@ -758,6 +826,7 @@ function initGame() {
   // ──────────────────────────────────────────────────────────
   function setupHoldToReveal() {
     const card = document.getElementById('hold-word-card');
+    if (!card) return;
     const hiddenEl = document.getElementById('word-peek-hidden');
     const shownEl  = document.getElementById('word-peek-shown');
 
@@ -791,13 +860,25 @@ function initGame() {
   function attachStaticListeners() {
     setupHoldToReveal();
 
-    document.getElementById('btn-share').addEventListener('click', shareRoom);
+    const shareBtn = document.getElementById('btn-share');
+    if (shareBtn) shareBtn.addEventListener('click', shareRoom);
 
-    document.getElementById('btn-start').addEventListener('click', startGame);
+    const startBtn = document.getElementById('btn-start');
+    if (startBtn) startBtn.addEventListener('click', startGame);
 
     // Save Name in Lobby
     const saveNameBtn = document.getElementById('btn-save-name');
     if (saveNameBtn) saveNameBtn.addEventListener('click', saveEditedName);
+
+    const lobbyNameInput = document.getElementById('lobby-edit-name-input');
+    if (lobbyNameInput) {
+      lobbyNameInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          saveEditedName();
+        }
+      });
+    }
 
     // Skip Turn & Back to Lobby
     const skipBtn = document.getElementById('btn-host-skip-turn');
@@ -807,29 +888,53 @@ function initGame() {
     if (backLobbyBtn) backLobbyBtn.addEventListener('click', backToLobby);
 
     // Clue Form & Typing
-    document.getElementById('clue-form').addEventListener('submit', sendClue);
-    document.getElementById('clue-input').addEventListener('input', onClueInputTyping);
+    const clueForm = document.getElementById('clue-form');
+    if (clueForm) clueForm.addEventListener('submit', sendClue);
+
+    const clueInput = document.getElementById('clue-input');
+    if (clueInput) clueInput.addEventListener('input', onClueInputTyping);
 
     // Force Vote & Extra Round
-    document.getElementById('btn-host-force-vote').addEventListener('click', forceVote);
-    document.getElementById('btn-request-extra-round').addEventListener('click', requestExtraRound);
+    const forceVoteBtn = document.getElementById('btn-host-force-vote');
+    if (forceVoteBtn) forceVoteBtn.addEventListener('click', forceVote);
+
+    const extraRoundBtn = document.getElementById('btn-request-extra-round');
+    if (extraRoundBtn) extraRoundBtn.addEventListener('click', requestExtraRound);
+
+    const forceTallyBtn = document.getElementById('btn-host-force-tally');
+    if (forceTallyBtn) forceTallyBtn.addEventListener('click', () => {
+      if (currentRoom) tallyVotes(currentRoom);
+    });
 
     // Voting
-    document.getElementById('btn-cast-vote').addEventListener('click', castVote);
+    const castVoteBtn = document.getElementById('btn-cast-vote');
+    if (castVoteBtn) castVoteBtn.addEventListener('click', castVote);
 
     // Results
-    document.getElementById('btn-next-round').addEventListener('click', nextRound);
-    document.getElementById('btn-end-game').addEventListener('click', endGame);
+    const nextRoundBtn = document.getElementById('btn-next-round');
+    if (nextRoundBtn) nextRoundBtn.addEventListener('click', nextRound);
+
+    const endGameBtn = document.getElementById('btn-end-game');
+    if (endGameBtn) endGameBtn.addEventListener('click', endGame);
 
     // Kick modal
-    document.getElementById('kick-cancel').addEventListener('click', closeKickModal);
-    document.getElementById('kick-confirm').addEventListener('click', () => {
-      if (kickTarget) kickPlayer(kickTarget);
-      closeKickModal();
-    });
-    document.getElementById('kick-modal').addEventListener('click', e => {
-      if (e.target === document.getElementById('kick-modal')) closeKickModal();
-    });
+    const kickCancelBtn = document.getElementById('kick-cancel');
+    if (kickCancelBtn) kickCancelBtn.addEventListener('click', closeKickModal);
+
+    const kickConfirmBtn = document.getElementById('kick-confirm');
+    if (kickConfirmBtn) {
+      kickConfirmBtn.addEventListener('click', () => {
+        if (kickTarget) kickPlayer(kickTarget);
+        closeKickModal();
+      });
+    }
+
+    const kickModal = document.getElementById('kick-modal');
+    if (kickModal) {
+      kickModal.addEventListener('click', e => {
+        if (e.target === kickModal) closeKickModal();
+      });
+    }
   }
 
   // ──────────────────────────────────────────────────────────
@@ -846,26 +951,47 @@ function initGame() {
     kickTarget = null;
   }
 
-  function shareRoom() {
-    const baseUrl = window.location.origin + window.location.pathname.replace('game.html','');
-    const url = baseUrl + 'index.html?room=' + ROOM_CODE;
-    if (navigator.share) {
-      navigator.share({ title: 'Join Sync Room', url }).catch(() => {});
+  function copyTextToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
     } else {
-      navigator.clipboard.writeText(url).then(() => showToast('Invite link copied!', 'success'));
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      try {
+        document.execCommand('copy');
+      } catch (err) {}
+      document.body.removeChild(textarea);
+      return Promise.resolve();
+    }
+  }
+
+  function shareRoom() {
+    const baseUrl = window.location.origin + window.location.pathname.replace(/game\.html.*$/, '');
+    const url = baseUrl + 'index.html?room=' + ROOM_CODE;
+    copyTextToClipboard(url).then(() => {
+      showToast(`Link copied! Room: ${ROOM_CODE}`, 'success');
+    });
+    if (navigator.share) {
+      navigator.share({ title: 'Sync Room — ' + ROOM_CODE, text: `Join my Sync Room! Code: ${ROOM_CODE}`, url }).catch(() => {});
     }
   }
 
   function renderLeaderboard(players, containerId) {
-    const el      = document.getElementById(containerId);
-    const sorted  = objectToArray(players).sort((a, b) => (b.score || 0) - (a.score || 0));
-    const medals  = ['gold', 'silver', 'bronze'];
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    const sorted = objectToArray(players).sort((a, b) => (b.score || 0) - (a.score || 0));
+    const medals = ['gold', 'silver', 'bronze'];
 
     el.innerHTML = sorted.map((p, i) => {
       const rankClass = i < 3 ? medals[i] : '';
       const rankLabel = i < 3 ? ['🥇','🥈','🥉'][i] : (i + 1) + '.';
       const isMe      = p.id === PLAYER_ID;
-      const avatarSvg = getAvatarSvg(p.avatar);
+      const avatarSvg = getSafeAvatarSvg(p.avatar);
       return `
         <div class="lb-item">
           <div class="lb-rank ${rankClass}">${rankLabel}</div>
@@ -873,10 +999,7 @@ function initGame() {
           <div class="lb-info">
             <div class="lb-name">${esc(p.name)}${isMe ? ' <span class="me-badge">You</span>' : ''}</div>
           </div>
-          <div>
-            <div class="lb-score">${p.score || 0}</div>
-            <div class="lb-score-label">pts</div>
-          </div>
+          <div class="lb-score">${p.score || 0} pts</div>
         </div>`;
     }).join('');
   }
@@ -887,7 +1010,7 @@ function initGame() {
       <div class="kicked-screen animate-in" style="padding:40px 20px;text-align:center">
         <div style="font-size:3rem;margin-bottom:12px">👋</div>
         <h2>You've been removed</h2>
-        <p class="text-sub">The host removed you from this room.</p>
+        <p class="text-sub">The host removed you from this room or the room was closed.</p>
         <a class="btn btn-primary mt-4" href="index.html">← Back to Home</a>
       </div>`;
   }
@@ -896,24 +1019,12 @@ function initGame() {
     if (!obj) return [];
     // ONLY include real players who have a valid name! Exclude ghost accounts!
     return Object.entries(obj)
-      .filter(([id, val]) => val && typeof val === 'object' && val.name && val.name.trim().length > 0)
+      .filter(([id, val]) => val && typeof val === 'object' && val.name && String(val.name).trim().length > 0)
       .map(([id, val]) => ({ id, ...val }));
   }
 
   function esc(str) {
     return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-
-  function getOrCreatePlayerId() {
-    let id = sessionStorage.getItem('syncroom_player_id');
-    if (!id) {
-      id = localStorage.getItem('syncroom_player_id');
-    }
-    if (!id) {
-      id = 'p_' + Math.random().toString(36).slice(2, 9) + '_' + Date.now().toString(36).slice(-4);
-      sessionStorage.setItem('syncroom_player_id', id);
-    }
-    return id;
   }
 
   function shuffleArr(arr) {
@@ -924,17 +1035,13 @@ function initGame() {
     return arr;
   }
 
-  function parseWord(wordStr) {
-    const match = wordStr.match(/^(.+?)\s*\((.+)\)$/);
-    if (match) return { word: match[1].trim(), wordEn: match[2].trim() };
-    return { word: wordStr, wordEn: '' };
-  }
-
   function showToast(msg, type = '') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
     const el = document.createElement('div');
     el.className = 'toast' + (type ? ' toast--' + type : '');
     el.textContent = msg;
-    document.getElementById('toast-container').appendChild(el);
+    container.appendChild(el);
     setTimeout(() => el.remove(), 3000);
   }
 

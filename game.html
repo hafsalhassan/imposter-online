@@ -208,6 +208,11 @@
         Submit Vote →
       </button>
 
+      <!-- Host Force Tally if someone is AFK -->
+      <div class="text-center mt-3">
+        <button class="btn btn-ghost btn--sm text-xs text-danger hidden" id="btn-host-force-tally">Force Reveal Results ➔</button>
+      </div>
+
       <!-- Option for extra round if tied or unsure -->
       <div class="text-center mt-4 hidden" id="extra-round-wrap">
         <p class="text-xs text-sub mb-2">Tied or unsure who the imposter is?</p>
@@ -301,9 +306,18 @@
 <!-- Firebase SDKs -->
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-<script src="js/firebase-config.js?v=100"></script>
-<script src="js/avatars.js?v=100"></script>
-<script src="js/words.js?v=100"></script>
-<script src="js/game.js?v=100"></script>
+<script src="js/firebase-config.js?v=105"></script>
+<script src="js/avatars.js?v=105"></script>
+<script src="js/words.js?v=105"></script>
+<script src="js/game.js?v=105"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(function(regs) {
+      for (var i = 0; i < regs.length; i++) {
+        regs[i].unregister();
+      }
+    });
+  }
+</script>
 </body>
 </html>

@@ -171,6 +171,9 @@
 
     saveRecentRoom(code, name);
     localStorage.setItem('syncroom_name', name);
+    localStorage.setItem('syncroom_avatar', avatarId);
+    sessionStorage.setItem('syncroom_pid_' + code, playerId);
+    sessionStorage.setItem('syncroom_player_id', playerId);
     window.location.href = 'game.html?room=' + code + '&pid=' + playerId;
   }
 
@@ -222,6 +225,9 @@
 
     saveRecentRoom(rawCode, name);
     localStorage.setItem('syncroom_name', name);
+    localStorage.setItem('syncroom_avatar', avatarId);
+    sessionStorage.setItem('syncroom_pid_' + rawCode, playerId);
+    sessionStorage.setItem('syncroom_player_id', playerId);
     window.location.href = 'game.html?room=' + rawCode + '&pid=' + playerId;
   }
 
