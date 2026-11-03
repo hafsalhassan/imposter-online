@@ -4,11 +4,19 @@
 (function () {
   'use strict';
 
-  const AVATAR_COLORS = [
-    '#6366F1','#10B981','#F59E0B','#EF4444',
-    '#8B5CF6','#06B6D4','#F97316','#EC4899',
-    '#14B8A6','#84CC16',
-  ];
+  // ── Safe Avatar Svg Getter (Fallback immune to load order) ─
+  function getSafeAvatarSvg(avatarId) {
+    if (typeof getAvatarSvg === 'function') {
+      try { return getAvatarSvg(avatarId); } catch (e) {}
+    }
+    if (typeof KERALA_AVATARS !== 'undefined' && Array.isArray(KERALA_AVATARS)) {
+      const match = KERALA_AVATARS.find(a => a.id === avatarId);
+      if (match) return match.svg;
+      if (KERALA_AVATARS[0]) return KERALA_AVATARS[0].svg;
+    }
+    // Universal SVG fallback
+    return `<svg viewBox="0 0 100 100" fill="#6366F1"><circle cx="50" cy="50" r="48" fill="#EEF2FF"/><circle cx="50" cy="40" r="20" fill="#6366F1"/><ellipse cx="50" cy="80" rx="30" ry="20" fill="#6366F1"/></svg>`;
+  }
 
   const TOTAL_DEFAULT_ROUNDS = 2; // 2 clue rounds before voting
 
@@ -199,112 +207,118 @@
   // 2. GAME ARENA (Word Hold-to-Reveal + Turn Clues)
   // ──────────────────────────────────────────────────────────
   async function renderArena(room) {
-    showScreen('arena');
+    try {
+      showScreen('arena');
 
-    // Fetch secret word & role
-    await fetchMyWordAndRole();
+      // Fetch secret word & role
+      await fetchMyWordAndRole();
 
-    // Round badge & category
-    const roundNumber = room.clueRound || 1;
-    const totalRounds = room.totalClueRounds || TOTAL_DEFAULT_ROUNDS;
-    document.getElementById('arena-round-badge').textContent = `Round ${roundNumber} of ${totalRounds}`;
+      // Round badge
+      const roundNumber = room.clueRound || 1;
+      const totalRounds = room.totalClueRounds || TOTAL_DEFAULT_ROUNDS;
+      document.getElementById('arena-round-badge').textContent = `Round ${roundNumber} of ${totalRounds}`;
 
-    const pair = room.currentWordId ? getWordPairById(room.currentWordId) : null;
-    document.getElementById('arena-category').textContent = pair ? `Category: ${pair.category}` : '';
+      // Host controls in arena
+      const isHost = room.hostId === PLAYER_ID;
+      document.getElementById('btn-host-force-vote').classList.toggle('hidden', !isHost);
+      document.getElementById('btn-host-skip-turn').classList.toggle('hidden', !isHost);
 
-    // Host controls in arena
-    const isHost = room.hostId === PLAYER_ID;
-    document.getElementById('btn-host-force-vote').classList.toggle('hidden', !isHost);
-    document.getElementById('btn-host-skip-turn').classList.toggle('hidden', !isHost);
+      const players = room.players || {};
 
-    // Setup Turn Order Strip (Safe Array conversion)
-    const rawOrder = room.turnOrder || [];
-    let order = Array.isArray(rawOrder) ? rawOrder : Object.values(rawOrder);
-    
-    // Fallback: If turnOrder is missing or empty, build it from player keys
-    if (!order || order.length === 0) {
-      order = Object.keys(players);
-    }
+      // Setup Turn Order Strip
+      const rawOrder = room.turnOrder || [];
+      let order = Array.isArray(rawOrder) ? [...rawOrder] : Object.values(rawOrder);
 
-    const currentTurnIndex = Number(room.currentTurnIndex || 0) % (order.length || 1);
-    const currentTurnPlayerId = order[currentTurnIndex];
+      // Fallback: If turnOrder is missing or empty, build it from player keys
+      if (!order || order.length === 0) {
+        order = Object.keys(players).filter(k => players[k] && players[k].name);
+      }
 
-    const stripEl = document.getElementById('turn-players-strip');
-    stripEl.innerHTML = '';
-    order.forEach((pid, idx) => {
-      const p = players[pid];
-      if (!p) return;
-      const chip = document.createElement('div');
-      const isCurrentTurn = pid === currentTurnPlayerId;
-      const isPastTurn    = idx < currentTurnIndex;
-      const avatarSvg     = getAvatarSvg(p.avatar);
+      const currentTurnIndex = Number(room.currentTurnIndex || 0) % (order.length || 1);
+      const currentTurnPlayerId = order[currentTurnIndex];
 
-      chip.className = 'turn-chip' +
-        (isCurrentTurn ? ' active-turn' : '') +
-        (isPastTurn ? ' completed-turn' : '');
+      const stripEl = document.getElementById('turn-players-strip');
+      stripEl.innerHTML = '';
 
-      chip.innerHTML = `
-        <span class="avatar-bubble" style="width:20px;height:20px">${avatarSvg}</span>
-        <span>#${idx + 1} ${esc(p.name)}${pid === PLAYER_ID ? ' (You)' : ''}</span>
-      `;
-      stripEl.appendChild(chip);
-    });
+      order.forEach((pid, idx) => {
+        const p = players[pid];
+        if (!p) return;
+        const chip = document.createElement('div');
+        const isCurrentTurn = pid === currentTurnPlayerId;
+        const isPastTurn    = idx < currentTurnIndex;
+        const avatarSvg     = getSafeAvatarSvg(p.avatar);
 
-    // Render Clues in Chat (Safe Array conversion)
-    const chatEl = document.getElementById('clue-chat-messages');
-    const rawClues = room.clues || [];
-    const clues = Array.isArray(rawClues) ? rawClues : Object.values(rawClues);
-    if (clues.length === 0) {
-      chatEl.innerHTML = `<div class="chat-empty">Round 1 beginning. Give a one-word or short clue about your secret word!</div>`;
-    } else {
-      chatEl.innerHTML = '';
-      clues.forEach(c => {
-        const bubble = document.createElement('div');
-        const isMine = c.playerId === PLAYER_ID;
-        bubble.className = 'clue-bubble ' + (isMine ? 'mine' : 'theirs');
-        bubble.innerHTML = `
-          <div class="clue-sender-meta">
-            <span>${esc(c.playerName)}</span>
-            <span>· Round ${c.round}</span>
-          </div>
-          <div class="clue-text">${esc(c.text)}</div>
+        chip.className = 'turn-chip' +
+          (isCurrentTurn ? ' active-turn' : '') +
+          (isPastTurn ? ' completed-turn' : '');
+
+        chip.innerHTML = `
+          <span class="avatar-bubble" style="width:22px;height:22px;display:inline-block">${avatarSvg}</span>
+          <span>#${idx + 1} <strong>${esc(p.name)}</strong>${pid === PLAYER_ID ? ' (You)' : ''}</span>
         `;
-        chatEl.appendChild(bubble);
+        stripEl.appendChild(chip);
       });
-      chatEl.scrollTop = chatEl.scrollHeight;
-    }
 
-    // Live typing indicator
-    const typingBar = document.getElementById('typing-indicator-bar');
-    const typingPlayerId = room.typingPlayerId;
-    if (typingPlayerId && typingPlayerId !== PLAYER_ID && players[typingPlayerId]) {
-      typingBar.classList.remove('hidden');
-      document.getElementById('typing-player-name').textContent = `${players[typingPlayerId].name} is typing a clue...`;
-    } else {
-      typingBar.classList.add('hidden');
-    }
+      // Render Clues in Chat
+      const chatEl = document.getElementById('clue-chat-messages');
+      const rawClues = room.clues || [];
+      const clues = Array.isArray(rawClues) ? rawClues : Object.values(rawClues);
+      if (clues.length === 0) {
+        chatEl.innerHTML = `<div class="chat-empty">Round 1 beginning. Give a one-word or short clue about your secret word!</div>`;
+      } else {
+        chatEl.innerHTML = '';
+        clues.forEach(c => {
+          const bubble = document.createElement('div');
+          const isMine = c.playerId === PLAYER_ID;
+          bubble.className = 'clue-bubble ' + (isMine ? 'mine' : 'theirs');
+          bubble.innerHTML = `
+            <div class="clue-sender-meta">
+              <span>${esc(c.playerName)}</span>
+              <span>· Round ${c.round}</span>
+            </div>
+            <div class="clue-text">${esc(c.text)}</div>
+          `;
+          chatEl.appendChild(bubble);
+        });
+        chatEl.scrollTop = chatEl.scrollHeight;
+      }
 
-    // Turn banner & input state
-    const isMyTurn = (currentTurnPlayerId === PLAYER_ID);
-    const clueInput = document.getElementById('clue-input');
-    const sendBtn   = document.getElementById('btn-send-clue');
-    const statusBanner = document.getElementById('turn-status-banner');
+      // Live typing indicator
+      const typingBar = document.getElementById('typing-indicator-bar');
+      const typingPlayerId = room.typingPlayerId;
+      if (typingPlayerId && typingPlayerId !== PLAYER_ID && players[typingPlayerId]) {
+        typingBar.classList.remove('hidden');
+        document.getElementById('typing-player-name').textContent = `${players[typingPlayerId].name} is typing a clue...`;
+      } else {
+        typingBar.classList.add('hidden');
+      }
 
-    if (isMyTurn) {
-      statusBanner.textContent = "👉 YOUR TURN to give a clue!";
-      statusBanner.style.color = "var(--accent)";
-      clueInput.disabled = false;
-      clueInput.readOnly = false;
-      clueInput.placeholder = "Type your clue here and press Enter...";
-      sendBtn.disabled = false;
-    } else {
-      const activeName = players[currentTurnPlayerId]?.name || 'a player';
-      statusBanner.textContent = `Waiting for ${activeName} to give a clue...`;
-      statusBanner.style.color = "var(--text-muted)";
-      clueInput.disabled = true;
-      clueInput.placeholder = `Waiting for ${activeName}'s clue...`;
-      sendBtn.disabled = true;
+      // Turn banner & input state
+      const isMyTurn = (currentTurnPlayerId === PLAYER_ID);
+      const clueInput = document.getElementById('clue-input');
+      const sendBtn   = document.getElementById('btn-send-clue');
+      const statusBanner = document.getElementById('turn-status-banner');
+
+      if (isMyTurn) {
+        statusBanner.innerHTML = `<span style="color:var(--accent);font-weight:700">👉 YOUR TURN! Type your clue below:</span>`;
+        clueInput.disabled = false;
+        clueInput.readOnly = false;
+        clueInput.placeholder = "Type your clue here and press Enter...";
+        sendBtn.disabled = false;
+        sendBtn.classList.remove('disabled');
+      } else {
+        const activeName = players[currentTurnPlayerId]?.name || 'next player';
+        statusBanner.innerHTML = `<span>⏳ Waiting for <strong>${esc(activeName)}</strong> to type clue...</span>`;
+        clueInput.disabled = true;
+        clueInput.readOnly = true;
+        clueInput.placeholder = `Waiting for ${activeName}'s clue...`;
+        sendBtn.disabled = true;
+        sendBtn.classList.add('disabled');
+      }
+    } catch (renderErr) {
+      console.error('Error in renderArena:', renderErr);
     }
+  }
   }
 
   // ──────────────────────────────────────────────────────────
@@ -564,11 +578,15 @@
     if (!text) return;
 
     const rawOrder = currentRoom.turnOrder || [];
-    const order = Array.isArray(rawOrder) ? rawOrder : Object.values(rawOrder);
-    const currentIndex = Number(currentRoom.currentTurnIndex || 0);
+    let order = Array.isArray(rawOrder) ? rawOrder : Object.values(rawOrder);
+    if (!order || order.length === 0) {
+      order = Object.keys(currentRoom.players || {});
+    }
+
+    const currentIndex = Number(currentRoom.currentTurnIndex || 0) % (order.length || 1);
 
     if (order[currentIndex] !== PLAYER_ID) {
-      showToast('Not your turn!', 'warning');
+      showToast('Wait! It is not your turn yet.', 'warning');
       return;
     }
 
