@@ -82,7 +82,26 @@ function shuffleArray(arr) {
   return a;
 }
 
-// Anti-repeat Word Picker with Category Filter
+// Anti-repeat Word Picker with Category Filter and Synced Used Word IDs
+function pickNextWordWithUsed(categoryFilter, usedWordIds) {
+  const used = Array.isArray(usedWordIds) ? usedWordIds : Object.values(usedWordIds || {});
+  let pool = WORD_LIBRARY;
+  if (categoryFilter && categoryFilter !== 'ALL') {
+    pool = WORD_LIBRARY.filter(w => w.category.toLowerCase() === categoryFilter.toLowerCase());
+    if (pool.length === 0) pool = WORD_LIBRARY;
+  }
+
+  let remaining = pool.filter(w => !used.includes(w.id));
+
+  // If all words in category are exhausted, cycle and restart
+  if (remaining.length === 0) {
+    remaining = [...pool];
+  }
+
+  const shuffled = shuffleArray(remaining);
+  return shuffled[0] || WORD_LIBRARY[0];
+}
+
 function pickNextWord(roomCode, categoryFilter) {
   const storageKey = `imposter_used_${roomCode}`;
   let used = [];
@@ -92,21 +111,7 @@ function pickNextWord(roomCode, categoryFilter) {
     used = [];
   }
 
-  let pool = WORD_LIBRARY;
-  if (categoryFilter && categoryFilter !== 'ALL') {
-    pool = WORD_LIBRARY.filter(w => w.category.toLowerCase() === categoryFilter.toLowerCase());
-    if (pool.length === 0) pool = WORD_LIBRARY;
-  }
-
-  let remaining = pool.filter(w => !used.includes(w.id));
-
-  if (remaining.length === 0) {
-    used = used.filter(id => !pool.some(w => w.id === id));
-    remaining = [...pool];
-  }
-
-  const shuffled = shuffleArray(remaining);
-  const pick = shuffled[0] || WORD_LIBRARY[0];
+  const pick = pickNextWordWithUsed(categoryFilter, used);
 
   used.push(pick.id);
   try {

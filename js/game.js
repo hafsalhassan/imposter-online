@@ -12,6 +12,8 @@ function initGame() {
   let selectedVote = null;
   let kickTarget = null;
   let typingTimeout = null;
+  let cachedWordRound = null;
+  let lastRenderedRound = null;
 
   // ── Safe Avatar Svg Getter (Flat Gaming Animal Avatars) ───
   function getSafeAvatarSvg(avatarId) {
@@ -137,6 +139,21 @@ function initGame() {
   function render(room) {
     if (!room || !room.state) return;
 
+    // Reset per-round cached word and role when in lobby or round changes
+    if (room.state === 'lobby') {
+      myWord = null;
+      myRole = null;
+      selectedVote = null;
+      cachedWordRound = null;
+    }
+    if (lastRenderedRound !== null && room.round !== lastRenderedRound) {
+      myWord = null;
+      myRole = null;
+      selectedVote = null;
+      cachedWordRound = null;
+    }
+    lastRenderedRound = room.round;
+
     switch (room.state) {
       case 'lobby':   renderLobby(room);   break;
       case 'arena':   renderArena(room);   break;
@@ -212,7 +229,7 @@ function initGame() {
     try {
       showScreen('arena');
 
-      // Fetch secret word & role
+      // Fetch secret word & role (always freshly checked per round)
       await fetchMyWordAndRole();
 
       // Round badge
@@ -330,14 +347,17 @@ function initGame() {
   }
 
   // ──────────────────────────────────────────────────────────
-  // FETCH WORD & ROLE (Clean Secret Card)
+  // FETCH WORD & ROLE (Clean Secret Card per Round)
   // ──────────────────────────────────────────────────────────
   async function fetchMyWordAndRole() {
-    if (myWord !== null && myRole !== null) return;
+    const currentRound = currentRoom?.round || 1;
+    if (cachedWordRound === currentRound && myWord !== null && myRole !== null) return;
+
     const wordSnap = await dbGet(roomPath('words/' + PLAYER_ID));
     const roleSnap = await dbGet(roomPath('roles/' + PLAYER_ID));
     myWord = wordSnap.val();
     myRole = roleSnap.val();
+    cachedWordRound = currentRound;
 
     const wordTextEl = document.getElementById('arena-word-text');
     const wordEnEl   = document.getElementById('arena-word-en');
@@ -465,13 +485,25 @@ function initGame() {
 
     const results = room.results || {};
     const players = room.players || {};
+    const roles   = room.roles || {};
+    const votes   = room.votes || {};
 
-    const elim      = players[results.eliminatedId] || {};
-    const revCard   = document.getElementById('reveal-card');
-    revCard.className = 'reveal-card ' + (results.wasImposter ? 'is-imposter' : 'not-imposter');
-    document.getElementById('reveal-name').textContent    = elim.name || 'No consensus';
-    document.getElementById('reveal-verdict').textContent = results.wasImposter
-      ? '🕵️ Was the Imposter!' : '✅ Was NOT the Imposter';
+    const elim    = players[results.eliminatedId] || {};
+    const revCard = document.getElementById('reveal-card');
+
+    if (results.isTie) {
+      revCard.className = 'reveal-card not-imposter';
+      document.getElementById('reveal-name').textContent = 'Tie Vote (No Elimination)';
+      document.getElementById('reveal-verdict').textContent = '🕵️ Imposter escaped undetected!';
+    } else if (results.wasImposter) {
+      revCard.className = 'reveal-card is-imposter';
+      document.getElementById('reveal-name').textContent = elim.name || 'Imposter';
+      document.getElementById('reveal-verdict').textContent = '🕵️ Was Caught! (Imposter eliminated)';
+    } else {
+      revCard.className = 'reveal-card not-imposter';
+      document.getElementById('reveal-name').textContent = elim.name || 'Innocent';
+      document.getElementById('reveal-verdict').textContent = '✅ Was NOT the Imposter (Innocent eliminated)';
+    }
 
     const pair = results.wordId ? getWordById(results.wordId) : null;
     if (pair) {
@@ -488,15 +520,25 @@ function initGame() {
     scListEl.innerHTML = '';
     objectToArray(players).forEach(p => {
       const delta  = scoreChanges[p.id] || 0;
-      const isImposter = (room.roles && room.roles[p.id] === 'imposter');
+      const isImposter = (roles[p.id] === 'imposter');
+      const playerVote = votes[p.id];
+      const votedForImposter = playerVote && (roles[playerVote] === 'imposter') && !isImposter;
+
       let reason = '';
       if (delta > 0) {
-        if (results.wasImposter) {
-          reason = (p.id === results.eliminatedId) ? '' : '✓ Voted for imposter (+2)';
+        if (isImposter) {
+          reason = '🕵️ Imposter survived undetected (+3)';
+        } else if (votedForImposter) {
+          reason = '✓ Correctly voted for imposter (+2)';
+        }
+      } else {
+        if (isImposter && results.wasImposter) {
+          reason = 'Caught by players (0)';
         } else {
-          reason = isImposter ? '🕵️ Imposter survived (+3)' : '';
+          reason = 'Voted wrong (0)';
         }
       }
+
       const item = document.createElement('div');
       item.className = 'score-change-item';
       item.innerHTML = `
@@ -542,17 +584,21 @@ function initGame() {
     const modeRadio = document.querySelector('input[name="imposter-mode"]:checked');
     const imposterMode = modeRadio ? modeRadio.value : (currentRoom.imposterMode || 'similar');
 
-    // Pick Word using selected Category
-    const pickedWordObj = pickNextWord(ROOM_CODE, selectedCategory);
+    // Anti-repeat Word Picker using Synced Used Word IDs from Firebase
+    const rawUsed = currentRoom.usedWordIds || [];
+    const usedWordIds = Array.isArray(rawUsed) ? rawUsed : Object.values(rawUsed);
+    const pickedWordObj = pickNextWordWithUsed(selectedCategory, usedWordIds);
+    const updatedUsedWordIds = [...usedWordIds, pickedWordObj.id];
+
     const round = (currentRoom.round || 0) + 1;
 
-    // Imposter calculation
-    const imposterCount = playerArr.length >= 10 ? 2 : 1;
+    // Imposter calculation (strictly 1 imposter for small groups < 8)
+    const imposterCount = playerArr.length >= 8 ? 2 : 1;
     const shuffled      = shuffleArr([...playerArr]);
     const imposters     = shuffled.slice(0, imposterCount).map(p => p.id);
 
-    // Turn order strictly from valid player IDs
-    const turnOrder = playerArr.map(p => p.id);
+    // Freshly shuffled turn order per round
+    const turnOrder = shuffleArr(playerArr.map(p => p.id));
 
     const rolesUpdate = {};
     const wordsUpdate = {};
@@ -574,16 +620,19 @@ function initGame() {
     myWord = null;
     myRole = null;
     selectedVote = null;
+    cachedWordRound = null;
 
     await dbSet(roomPath('roles'), rolesUpdate);
     await dbSet(roomPath('words'), wordsUpdate);
     await dbSet(roomPath('votes'), null);
     await dbSet(roomPath('clues'), []);
+    await dbSet(roomPath('results'), null);
 
     await dbUpdate(roomPath(), {
       state:            'arena',
       round,
       imposterMode,
+      usedWordIds:      updatedUsedWordIds,
       clueRound:        1,
       totalClueRounds:  TOTAL_DEFAULT_ROUNDS,
       turnOrder,
@@ -691,7 +740,16 @@ function initGame() {
     myWord = null;
     myRole = null;
     selectedVote = null;
-    await dbUpdate(roomPath(), { state: 'lobby' });
+    cachedWordRound = null;
+    await dbUpdate(roomPath(), {
+      state: 'lobby',
+      votes: null,
+      clues: [],
+      results: null,
+      currentTurnIndex: 0,
+      clueRound: 1,
+      typingPlayerId: null
+    });
   }
 
   async function leaveRoom() {
@@ -758,7 +816,7 @@ function initGame() {
     const secondVote = sortedVotes[1];
 
     // Check if there is a tie for the most votes
-    const isTie = topVote && secondVote && (topVote[1] === secondVote[1]);
+    const isTie = !topVote || (topVote && secondVote && (topVote[1] === secondVote[1]));
 
     const eliminatedId = isTie ? null : topVote?.[0];
     const wasImposter  = eliminatedId ? (roles[eliminatedId] === 'imposter') : false;
@@ -768,15 +826,20 @@ function initGame() {
 
     Object.keys(players).forEach(pid => { scoreChanges[pid] = 0; });
 
-    if (wasImposter) {
-      // Regular players who voted correctly get +2
-      Object.entries(votes).forEach(([voterId, targetId]) => {
-        if (targetId === eliminatedId && roles[voterId] !== 'imposter') {
-          scoreChanges[voterId] = (scoreChanges[voterId] || 0) + 2;
-        }
-      });
-    } else {
-      // Imposter survived (or tie where imposter wasn't caught) -> Imposter gets +3
+    // 1. Point for correct votes:
+    // Any regular player who voted for the REAL imposter gets +2 points!
+    // Even if the group tied or eliminated someone else, whoever spotted the imposter gets rewarded!
+    Object.entries(votes).forEach(([voterId, targetId]) => {
+      const isVoterRegular = roles[voterId] !== 'imposter';
+      const isTargetImposter = roles[targetId] === 'imposter';
+      if (isVoterRegular && isTargetImposter) {
+        scoreChanges[voterId] = (scoreChanges[voterId] || 0) + 2;
+      }
+    });
+
+    // 2. Imposter survived bonus:
+    // If the imposter was NOT caught/eliminated, imposter gets +3 points!
+    if (!wasImposter) {
       Object.entries(roles).forEach(([pid, role]) => {
         if (role === 'imposter') {
           scoreChanges[pid] = (scoreChanges[pid] || 0) + 3;
@@ -807,7 +870,16 @@ function initGame() {
     myWord = null;
     myRole = null;
     selectedVote = null;
-    await dbUpdate(roomPath(), { state: 'lobby' });
+    cachedWordRound = null;
+    await dbUpdate(roomPath(), {
+      state: 'lobby',
+      votes: null,
+      clues: [],
+      results: null,
+      currentTurnIndex: 0,
+      clueRound: 1,
+      typingPlayerId: null
+    });
   }
 
   async function endGame() {
