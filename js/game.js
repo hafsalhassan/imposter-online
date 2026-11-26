@@ -14,6 +14,13 @@ function initGame() {
   let typingTimeout = null;
   let cachedWordRound = null;
   let lastRenderedRound = null;
+  let wasMyTurn = false;
+  let isTallying = false;
+  let soundEnabled = true;
+
+  try {
+    soundEnabled = localStorage.getItem('syncroom_sound') !== 'off';
+  } catch (e) {}
 
   // ── Safe Avatar Svg Getter (Flat Gaming Animal Avatars) ───
   function getSafeAvatarSvg(avatarId) {
@@ -25,7 +32,64 @@ function initGame() {
       if (match) return match.svg;
       if (ANIMAL_AVATARS[0]) return ANIMAL_AVATARS[0].svg;
     }
-    return `<svg viewBox="0 0 100 100" fill="#6366F1"><circle cx="50" cy="50" r="48" fill="#EEF2FF"/><circle cx="50" cy="40" r="20" fill="#6366F1"/><ellipse cx="50" cy="80" rx="30" ry="20" fill="#6366F1"/></svg>`;
+    return `<svg viewBox="0 0 100 100" fill="#5B5AF7"><circle cx="50" cy="50" r="48" fill="#EEF2FF"/><circle cx="50" cy="40" r="20" fill="#5B5AF7"/><ellipse cx="50" cy="80" rx="30" ry="20" fill="#5B5AF7"/></svg>`;
+  }
+
+  // ── Theme & Sound Helpers ─────────────────────────────────
+  function getEffectiveTheme() {
+    const attr = document.documentElement.getAttribute('data-theme');
+    if (attr === 'dark' || attr === 'light') return attr;
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+
+  function syncThemeButton() {
+    const btn = document.getElementById('btn-theme-toggle');
+    if (!btn) return;
+    const isDark = getEffectiveTheme() === 'dark';
+    btn.textContent = isDark ? '☀️' : '🌙';
+    btn.title = isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode';
+  }
+
+  function toggleTheme() {
+    const next = getEffectiveTheme() === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('syncroom_theme', next); } catch (e) {}
+    syncThemeButton();
+  }
+
+  function syncSoundButton() {
+    const btn = document.getElementById('btn-sound-toggle');
+    if (!btn) return;
+    btn.textContent = soundEnabled ? '🔊' : '🔇';
+    btn.title = soundEnabled ? 'Mute turn alert' : 'Unmute turn alert';
+  }
+
+  function toggleSound() {
+    soundEnabled = !soundEnabled;
+    try { localStorage.setItem('syncroom_sound', soundEnabled ? 'on' : 'off'); } catch (e) {}
+    syncSoundButton();
+    showToast(soundEnabled ? 'Turn sound enabled' : 'Sound muted', 'info');
+  }
+
+  function playTurnChime() {
+    if (!soundEnabled) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, now);       // D5
+      osc.frequency.setValueAtTime(880.0, now + 0.08); // A5
+      gain.gain.setValueAtTime(0.06, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.26);
+    } catch (e) {}
   }
 
   const TOTAL_DEFAULT_ROUNDS = 2;
@@ -38,14 +102,14 @@ function initGame() {
     return;
   }
 
-  // Immediately display room code in header & title
+  // Immediately display room code in header, invite card & title
   const headerCodeEl = document.getElementById('header-room-code');
   if (headerCodeEl) {
     headerCodeEl.textContent = ROOM_CODE;
-    headerCodeEl.title = 'Click to copy invite link';
-    headerCodeEl.style.cursor = 'pointer';
     headerCodeEl.onclick = shareRoom;
   }
+  const lobbyInviteEl = document.getElementById('lobby-invite-code');
+  if (lobbyInviteEl) lobbyInviteEl.textContent = ROOM_CODE;
   document.title = `Sync Room — ${ROOM_CODE}`;
 
   // Dedicated session storage key per room to avoid multi-tab collisions on same browser
@@ -57,6 +121,8 @@ function initGame() {
   sessionStorage.setItem(tabPlayerKey, PLAYER_ID);
   sessionStorage.setItem('syncroom_player_id', PLAYER_ID);
 
+  syncThemeButton();
+  syncSoundButton();
   attachStaticListeners();
   listenRoom();
   keepOnline();
@@ -145,12 +211,16 @@ function initGame() {
       myRole = null;
       selectedVote = null;
       cachedWordRound = null;
+      wasMyTurn = false;
+      isTallying = false;
     }
     if (lastRenderedRound !== null && room.round !== lastRenderedRound) {
       myWord = null;
       myRole = null;
       selectedVote = null;
       cachedWordRound = null;
+      wasMyTurn = false;
+      isTallying = false;
     }
     lastRenderedRound = room.round;
 
@@ -180,10 +250,14 @@ function initGame() {
     const hostPanel = document.getElementById('host-exclusive-panel');
     if (hostPanel) hostPanel.classList.toggle('hidden', !isHost);
 
-    // Sync Imposter Mode Radio
+    // Sync Imposter Mode & Clue Rounds Radios
     if (room.imposterMode) {
       const modeRadio = document.querySelector(`input[name="imposter-mode"][value="${room.imposterMode}"]`);
       if (modeRadio) modeRadio.checked = true;
+    }
+    if (room.totalClueRounds) {
+      const roundRadio = document.querySelector(`input[name="clue-rounds"][value="${room.totalClueRounds}"]`);
+      if (roundRadio) roundRadio.checked = true;
     }
 
     document.getElementById('host-start-wrap').classList.toggle('hidden', !isHost);
@@ -200,18 +274,20 @@ function initGame() {
       const isMe    = p.id === PLAYER_ID;
       const isHost2 = p.id === room.hostId;
       const avatarSvg = getSafeAvatarSvg(p.avatar);
+      const pts = p.score || 0;
 
       item.innerHTML = `
         <div class="avatar-bubble">${avatarSvg}</div>
         <div class="player-info">
           <div class="player-name">
             ${esc(p.name)}
-            ${isMe   ? '<span class="me-badge">You</span>'   : ''}
+            ${isMe    ? '<span class="me-badge">You</span>'   : ''}
             ${isHost2 ? '<span class="host-badge">Host</span>' : ''}
           </div>
-          <div class="player-meta">${p.isOnline ? '● Online' : '○ Away'} · Order #${i + 1}</div>
+          <div class="player-meta">${p.isOnline ? '● Online' : '○ Away'} · Player #${i + 1}</div>
         </div>
         <div class="player-actions">
+          ${pts > 0 ? `<span class="player-score-pill">${pts} pts</span>` : ''}
           ${isHost && !isMe ? `<button class="kick-btn" data-id="${p.id}" data-name="${esc(p.name)}" title="Remove">✕</button>` : ''}
         </div>`;
       listEl.appendChild(item);
@@ -233,9 +309,10 @@ function initGame() {
       await fetchMyWordAndRole();
 
       // Round badge
+      const gameNumber  = room.round || 1;
       const roundNumber = room.clueRound || 1;
       const totalRounds = room.totalClueRounds || TOTAL_DEFAULT_ROUNDS;
-      document.getElementById('arena-round-badge').textContent = `Round ${roundNumber} of ${totalRounds}`;
+      document.getElementById('arena-round-badge').textContent = `Game #${gameNumber} · Clue ${roundNumber}/${totalRounds}`;
 
       // Host controls in arena
       const isHost = room.hostId === PLAYER_ID;
@@ -244,11 +321,10 @@ function initGame() {
 
       const players = room.players || {};
 
-      // Setup Turn Order Strip
+      // Setup Turn Order Stepper
       const rawOrder = room.turnOrder || [];
       let order = Array.isArray(rawOrder) ? [...rawOrder] : Object.values(rawOrder);
 
-      // Fallback: If turnOrder is missing or empty, build it from player keys
       if (!order || order.length === 0) {
         order = Object.keys(players).filter(k => players[k] && players[k].name);
       }
@@ -256,9 +332,13 @@ function initGame() {
       const currentTurnIndex = Number(room.currentTurnIndex || 0) % (order.length || 1);
       const currentTurnPlayerId = order[currentTurnIndex];
 
+      const turnProgressEl = document.getElementById('turn-progress-label');
+      if (turnProgressEl) turnProgressEl.textContent = `${currentTurnIndex + 1} / ${order.length}`;
+
       const stripEl = document.getElementById('turn-players-strip');
       stripEl.innerHTML = '';
 
+      let activeChipEl = null;
       order.forEach((pid, idx) => {
         const p = players[pid];
         if (!p) return;
@@ -272,21 +352,37 @@ function initGame() {
           (isPastTurn ? ' completed-turn' : '');
 
         chip.innerHTML = `
-          <span class="avatar-bubble" style="width:22px;height:22px;display:inline-block">${avatarSvg}</span>
-          <span>#${idx + 1} <strong>${esc(p.name)}</strong>${pid === PLAYER_ID ? ' (You)' : ''}</span>
+          <span class="avatar-bubble" style="width:22px;height:22px;display:inline-flex">${avatarSvg}</span>
+          <span>${isPastTurn ? '✓ ' : '#' + (idx + 1) + ' '}<strong>${esc(p.name)}</strong>${pid === PLAYER_ID ? ' (You)' : ''}</span>
         `;
         stripEl.appendChild(chip);
+        if (isCurrentTurn) activeChipEl = chip;
       });
 
-      // Render Clues in Chat with Player Avatars
+      if (activeChipEl && typeof activeChipEl.scrollIntoView === 'function') {
+        try {
+          activeChipEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        } catch (e) {}
+      }
+
+      // Render Clues in Chat with Round Dividers & Player Avatars
       const chatEl = document.getElementById('clue-chat-messages');
       const rawClues = room.clues || [];
       const clues = Array.isArray(rawClues) ? rawClues : Object.values(rawClues);
       if (clues.length === 0) {
-        chatEl.innerHTML = `<div class="chat-empty">Round 1 beginning. Give a one-word or short clue about your secret word!</div>`;
+        chatEl.innerHTML = `<div class="chat-empty">Clue Round ${roundNumber} starting. Drop a short clue about your secret word!</div>`;
       } else {
         chatEl.innerHTML = '';
+        let lastClueRound = null;
         clues.forEach(c => {
+          if (c.round && c.round !== lastClueRound) {
+            const divider = document.createElement('div');
+            divider.className = 'chat-round-divider';
+            divider.textContent = `Clue Round ${c.round}`;
+            chatEl.appendChild(divider);
+            lastClueRound = c.round;
+          }
+
           const bubble = document.createElement('div');
           const isMine = c.playerId === PLAYER_ID;
           const senderPlayer = players[c.playerId] || {};
@@ -295,10 +391,9 @@ function initGame() {
 
           bubble.className = 'clue-bubble ' + (isMine ? 'mine' : 'theirs');
           bubble.innerHTML = `
-            <div class="clue-sender-meta flex items-center gap-1 ${isMine ? 'justify-end' : ''}">
+            <div class="clue-sender-meta ${isMine ? 'justify-end' : ''}">
               <div class="avatar-bubble" style="width:18px;height:18px;display:inline-flex">${avatarSvg}</div>
               <span class="font-bold">${esc(c.playerName)}</span>
-              <span>· Round ${c.round}</span>
             </div>
             <div class="clue-text">${esc(c.text)}</div>
           `;
@@ -321,23 +416,28 @@ function initGame() {
 
       // Turn banner & input state
       const isMyTurn = (currentTurnPlayerId === PLAYER_ID);
+      if (isMyTurn && !wasMyTurn) {
+        playTurnChime();
+      }
+      wasMyTurn = isMyTurn;
+
       const clueInput = document.getElementById('clue-input');
       const sendBtn   = document.getElementById('btn-send-clue');
       const statusBanner = document.getElementById('turn-status-banner');
 
       if (isMyTurn) {
-        statusBanner.innerHTML = `<span style="color:var(--accent);font-weight:700">👉 YOUR TURN! Type your clue below:</span>`;
+        statusBanner.innerHTML = `<span style="color:var(--accent);font-weight:700">👉 YOUR TURN!</span>`;
         clueInput.disabled = false;
         clueInput.readOnly = false;
-        clueInput.placeholder = "Type your clue here and press Enter...";
+        clueInput.placeholder = "Type your clue and hit Enter...";
         sendBtn.disabled = false;
         sendBtn.classList.remove('disabled');
       } else {
         const activeName = players[currentTurnPlayerId]?.name || 'next player';
-        statusBanner.innerHTML = `<span>⏳ Waiting for <strong>${esc(activeName)}</strong> to type clue...</span>`;
+        statusBanner.innerHTML = `<span>⏳ <strong>${esc(activeName)}</strong>'s turn</span>`;
         clueInput.disabled = true;
         clueInput.readOnly = true;
-        clueInput.placeholder = `Waiting for ${activeName}'s clue...`;
+        clueInput.placeholder = `Waiting for ${activeName}...`;
         sendBtn.disabled = true;
         sendBtn.classList.add('disabled');
       }
@@ -412,19 +512,23 @@ function initGame() {
 
     if (myVote) selectedVote = myVote;
 
-    // Mini Clue Summary
+    // Clue Summary
     const clueSummaryEl = document.getElementById('voting-clues-summary');
     const rawClues = room.clues || [];
     const clues = Array.isArray(rawClues) ? rawClues : Object.values(rawClues);
     clueSummaryEl.innerHTML = clues.map(c => `
-      <div><strong>${esc(c.playerName)}:</strong> "${esc(c.text)}" <span style="color:var(--text-muted);font-size:.7rem">(R${c.round})</span></div>
+      <div class="voting-clue-row">
+        <strong>${esc(c.playerName)}:</strong>
+        <span style="flex:1">"${esc(c.text)}"</span>
+        <span class="text-muted text-xs">R${c.round}</span>
+      </div>
     `).join('') || '<div class="text-muted">No clues logged.</div>';
 
     // Vote List
     const listEl = document.getElementById('vote-list');
     listEl.innerHTML = '';
 
-    playerArr.forEach((p, i) => {
+    playerArr.forEach(p => {
       const isMe = p.id === PLAYER_ID;
       const hasVoted = !!votes[p.id];
       const avatarSvg = getSafeAvatarSvg(p.avatar);
@@ -449,13 +553,17 @@ function initGame() {
 
     const voteCount  = Object.keys(votes).length;
     const totalCount = playerArr.length;
+    const pct = totalCount > 0 ? Math.min(100, Math.round((voteCount / totalCount) * 100)) : 0;
+    const progressEl = document.getElementById('vote-progress-fill');
+    if (progressEl) progressEl.style.width = pct + '%';
+
     document.getElementById('vote-status').textContent = `${voteCount} / ${totalCount} voted`;
 
     const castBtn = document.getElementById('btn-cast-vote');
     castBtn.disabled = !selectedVote || !!myVote;
-    if (myVote) castBtn.textContent = '✓ Vote Submitted';
+    castBtn.textContent = myVote ? '✓ Vote Submitted' : 'Submit Vote →';
 
-    // Show extra round option for host or any player
+    // Show extra round option
     document.getElementById('extra-round-wrap').classList.remove('hidden');
 
     // Host controls in voting
@@ -464,7 +572,7 @@ function initGame() {
     if (forceTallyBtn) forceTallyBtn.classList.toggle('hidden', !isHost);
 
     // Host tallies when everyone voted
-    if (isHost && voteCount >= totalCount && totalCount > 0) {
+    if (isHost && voteCount >= totalCount && totalCount > 0 && !isTallying) {
       tallyVotes(room);
     }
   }
@@ -488,6 +596,9 @@ function initGame() {
     const roles   = room.roles || {};
     const votes   = room.votes || {};
 
+    const roundBadgeEl = document.getElementById('results-round-badge');
+    if (roundBadgeEl) roundBadgeEl.textContent = `Game #${room.round || 1} Results`;
+
     const elim    = players[results.eliminatedId] || {};
     const revCard = document.getElementById('reveal-card');
 
@@ -505,13 +616,42 @@ function initGame() {
       document.getElementById('reveal-verdict').textContent = '✅ Was NOT the Imposter (Innocent eliminated)';
     }
 
-    const pair = results.wordId ? getWordById(results.wordId) : null;
-    if (pair) {
-      document.getElementById('result-main-word').innerHTML = pair.word;
-      if (room.imposterMode === 'similar' && pair.similarWord) {
-        document.getElementById('result-imposter-word').innerHTML = pair.similarWord;
+    // Word Comparison (supports library words & custom host words)
+    const pair = results.wordId && results.wordId !== 'custom' ? getWordById(results.wordId) : null;
+    const mainWordDisplay = results.mainWord || pair?.word || room.currentWordText || '–';
+    const imposterWordDisplay = results.similarWord || pair?.similarWord || '';
+
+    document.getElementById('result-main-word').textContent = mainWordDisplay;
+    if (room.imposterMode === 'similar' && imposterWordDisplay) {
+      document.getElementById('result-imposter-word').textContent = imposterWordDisplay;
+    } else {
+      document.getElementById('result-imposter-word').innerHTML = `<em>No Word (Blind Imposter)</em>`;
+    }
+
+    // Vote Breakdown ("Who Voted For Whom")
+    const breakdownEl = document.getElementById('vote-breakdown-list');
+    if (breakdownEl) {
+      const voterEntries = Object.entries(votes);
+      if (voterEntries.length === 0) {
+        breakdownEl.innerHTML = '<div class="text-xs text-muted">No votes recorded.</div>';
       } else {
-        document.getElementById('result-imposter-word').innerHTML = `<em>No Word (Blind Imposter)</em>`;
+        breakdownEl.innerHTML = voterEntries.map(([voterId, targetId]) => {
+          const voter  = players[voterId] || { name: 'Player' };
+          const target = players[targetId] || { name: 'Player' };
+          const hitImposter = roles[targetId] === 'imposter';
+          return `
+            <div class="vote-breakdown-row">
+              <div class="flex items-center gap-2">
+                <div class="avatar-bubble" style="width:22px;height:22px">${getSafeAvatarSvg(voter.avatar)}</div>
+                <span><strong>${esc(voter.name)}</strong>${roles[voterId] === 'imposter' ? ' 🕵️' : ''}</span>
+              </div>
+              <span class="vote-breakdown-arrow">voted →</span>
+              <div class="flex items-center gap-2">
+                <span><strong>${esc(target.name)}</strong>${hitImposter ? ' 🎯' : ''}</span>
+                <div class="avatar-bubble" style="width:22px;height:22px">${getSafeAvatarSvg(target.avatar)}</div>
+              </div>
+            </div>`;
+        }).join('');
       }
     }
 
@@ -542,7 +682,10 @@ function initGame() {
       const item = document.createElement('div');
       item.className = 'score-change-item';
       item.innerHTML = `
-        <div class="score-change-name">${esc(p.name)}</div>
+        <div class="flex items-center gap-2">
+          <div class="avatar-bubble" style="width:28px;height:28px">${getSafeAvatarSvg(p.avatar)}</div>
+          <div class="score-change-name">${esc(p.name)}${isImposter ? ' <span class="badge badge-danger" style="padding:1px 6px;font-size:.65rem">Imposter</span>' : ''}</div>
+        </div>
         <div>
           <div class="score-change-delta ${delta > 0 ? 'positive' : 'zero'}">${delta > 0 ? '+' + delta : '0'}</div>
           <div class="score-change-reason">${reason}</div>
@@ -584,11 +727,32 @@ function initGame() {
     const modeRadio = document.querySelector('input[name="imposter-mode"]:checked');
     const imposterMode = modeRadio ? modeRadio.value : (currentRoom.imposterMode || 'similar');
 
-    // Anti-repeat Word Picker using Synced Used Word IDs from Firebase
+    const roundsRadio = document.querySelector('input[name="clue-rounds"]:checked');
+    const totalClueRounds = roundsRadio ? Number(roundsRadio.value) : (currentRoom.totalClueRounds || TOTAL_DEFAULT_ROUNDS);
+
+    // Optional Custom Word check
+    const customMainEl    = document.getElementById('custom-main-word');
+    const customSimilarEl = document.getElementById('custom-similar-word');
+    const customMain      = customMainEl ? customMainEl.value.trim() : '';
+    const customSimilar   = customSimilarEl ? customSimilarEl.value.trim() : '';
+
     const rawUsed = currentRoom.usedWordIds || [];
     const usedWordIds = Array.isArray(rawUsed) ? rawUsed : Object.values(rawUsed);
-    const pickedWordObj = pickNextWordWithUsed(selectedCategory, usedWordIds);
-    const updatedUsedWordIds = [...usedWordIds, pickedWordObj.id];
+    let pickedWordObj;
+    let updatedUsedWordIds = [...usedWordIds];
+
+    if (customMain) {
+      pickedWordObj = {
+        id: 'custom',
+        word: customMain,
+        similarWord: customSimilar || customMain
+      };
+      if (customMainEl) customMainEl.value = '';
+      if (customSimilarEl) customSimilarEl.value = '';
+    } else {
+      pickedWordObj = pickNextWordWithUsed(selectedCategory, usedWordIds);
+      updatedUsedWordIds.push(pickedWordObj.id);
+    }
 
     const round = (currentRoom.round || 0) + 1;
 
@@ -621,6 +785,8 @@ function initGame() {
     myRole = null;
     selectedVote = null;
     cachedWordRound = null;
+    wasMyTurn = false;
+    isTallying = false;
 
     await dbSet(roomPath('roles'), rolesUpdate);
     await dbSet(roomPath('words'), wordsUpdate);
@@ -629,17 +795,18 @@ function initGame() {
     await dbSet(roomPath('results'), null);
 
     await dbUpdate(roomPath(), {
-      state:            'arena',
+      state:              'arena',
       round,
       imposterMode,
-      usedWordIds:      updatedUsedWordIds,
-      clueRound:        1,
-      totalClueRounds:  TOTAL_DEFAULT_ROUNDS,
+      usedWordIds:        updatedUsedWordIds,
+      clueRound:          1,
+      totalClueRounds,
       turnOrder,
-      currentTurnIndex: 0,
-      currentWordId:    pickedWordObj.id,
-      currentWordText:  pickedWordObj.word,
-      typingPlayerId:   null,
+      currentTurnIndex:   0,
+      currentWordId:      pickedWordObj.id,
+      currentWordText:    pickedWordObj.word,
+      currentSimilarText: pickedWordObj.similarWord || '',
+      typingPlayerId:     null,
     });
   }
 
@@ -664,6 +831,7 @@ function initGame() {
 
     input.value = '';
     input.disabled = true;
+    updateCharCounter();
 
     // Clear typing status
     await dbSet(roomPath('typingPlayerId'), null);
@@ -687,12 +855,10 @@ function initGame() {
     let nextState = 'arena';
 
     if (nextIndex >= order.length) {
-      // Completed one full round of clues
       if (nextClueRound < (currentRoom.totalClueRounds || TOTAL_DEFAULT_ROUNDS)) {
         nextClueRound++;
         nextIndex = 0;
       } else {
-        // All clue rounds finished -> Proceed to voting!
         nextState = 'voting';
       }
     }
@@ -753,7 +919,7 @@ function initGame() {
   }
 
   async function leaveRoom() {
-    if (confirm('Are you sure you want to exit to the home page? You can rejoin anytime.')) {
+    if (confirm('Exit to the home page? You can rejoin anytime with the room code.')) {
       if (ROOM_CODE && PLAYER_ID) {
         try {
           await dbSet(roomPath(`players/${PLAYER_ID}/isOnline`), false);
@@ -763,8 +929,17 @@ function initGame() {
     }
   }
 
+  function updateCharCounter() {
+    const input = document.getElementById('clue-input');
+    const counter = document.getElementById('clue-char-count');
+    if (input && counter) {
+      counter.textContent = `${input.value.length}/60`;
+    }
+  }
+
   // Live typing broadcaster
   function onClueInputTyping() {
+    updateCharCounter();
     clearTimeout(typingTimeout);
     dbSet(roomPath('typingPlayerId'), PLAYER_ID);
     typingTimeout = setTimeout(() => {
@@ -802,67 +977,73 @@ function initGame() {
   }
 
   async function tallyVotes(room) {
-    const votes   = room.votes   || {};
-    const players = room.players || {};
-    const roles   = room.roles   || {};
+    if (isTallying) return;
+    isTallying = true;
 
-    const tally = {};
-    Object.values(votes).forEach(targetId => {
-      tally[targetId] = (tally[targetId] || 0) + 1;
-    });
+    try {
+      const votes   = room.votes   || {};
+      const players = room.players || {};
+      const roles   = room.roles   || {};
 
-    const sortedVotes = Object.entries(tally).sort((a, b) => b[1] - a[1]);
-    const topVote = sortedVotes[0];
-    const secondVote = sortedVotes[1];
+      const tally = {};
+      Object.values(votes).forEach(targetId => {
+        tally[targetId] = (tally[targetId] || 0) + 1;
+      });
 
-    // Check if there is a tie for the most votes
-    const isTie = !topVote || (topVote && secondVote && (topVote[1] === secondVote[1]));
+      const sortedVotes = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+      const topVote = sortedVotes[0];
+      const secondVote = sortedVotes[1];
 
-    const eliminatedId = isTie ? null : topVote?.[0];
-    const wasImposter  = eliminatedId ? (roles[eliminatedId] === 'imposter') : false;
+      const isTie = !topVote || (topVote && secondVote && (topVote[1] === secondVote[1]));
 
-    const scoreChanges = {};
-    const updates      = {};
+      const eliminatedId = isTie ? null : topVote?.[0];
+      const wasImposter  = eliminatedId ? (roles[eliminatedId] === 'imposter') : false;
 
-    Object.keys(players).forEach(pid => { scoreChanges[pid] = 0; });
+      const scoreChanges = {};
+      const updates      = {};
 
-    // 1. Point for correct votes:
-    // Any regular player who voted for the REAL imposter gets +2 points!
-    // Even if the group tied or eliminated someone else, whoever spotted the imposter gets rewarded!
-    Object.entries(votes).forEach(([voterId, targetId]) => {
-      const isVoterRegular = roles[voterId] !== 'imposter';
-      const isTargetImposter = roles[targetId] === 'imposter';
-      if (isVoterRegular && isTargetImposter) {
-        scoreChanges[voterId] = (scoreChanges[voterId] || 0) + 2;
-      }
-    });
+      Object.keys(players).forEach(pid => { scoreChanges[pid] = 0; });
 
-    // 2. Imposter survived bonus:
-    // If the imposter was NOT caught/eliminated, imposter gets +3 points!
-    if (!wasImposter) {
-      Object.entries(roles).forEach(([pid, role]) => {
-        if (role === 'imposter') {
-          scoreChanges[pid] = (scoreChanges[pid] || 0) + 3;
+      // 1. Any regular player who voted for the REAL imposter gets +2 points
+      Object.entries(votes).forEach(([voterId, targetId]) => {
+        const isVoterRegular = roles[voterId] !== 'imposter';
+        const isTargetImposter = roles[targetId] === 'imposter';
+        if (isVoterRegular && isTargetImposter) {
+          scoreChanges[voterId] = (scoreChanges[voterId] || 0) + 2;
         }
       });
+
+      // 2. If the imposter survived, imposter gets +3 points
+      if (!wasImposter) {
+        Object.entries(roles).forEach(([pid, role]) => {
+          if (role === 'imposter') {
+            scoreChanges[pid] = (scoreChanges[pid] || 0) + 3;
+          }
+        });
+      }
+
+      Object.keys(players).forEach(pid => {
+        updates[`players/${pid}/score`] =
+          (players[pid].score || 0) + (scoreChanges[pid] || 0);
+      });
+
+      updates['results'] = {
+        eliminatedId,
+        wasImposter,
+        wordId:       room.currentWordId,
+        mainWord:     room.currentWordText || '',
+        similarWord:  room.currentSimilarText || '',
+        scoreChanges,
+        votes:        tally,
+        isTie,
+      };
+      updates['state'] = 'results';
+
+      await dbUpdate(roomPath(), updates);
+    } catch (err) {
+      isTallying = false;
+      console.error('Error tallying votes:', err);
     }
-
-    Object.keys(players).forEach(pid => {
-      updates[`players/${pid}/score`] =
-        (players[pid].score || 0) + (scoreChanges[pid] || 0);
-    });
-
-    updates['results'] = {
-      eliminatedId,
-      wasImposter,
-      wordId:       room.currentWordId,
-      scoreChanges,
-      votes:        tally,
-      isTie,
-    };
-    updates['state'] = 'results';
-
-    await dbUpdate(roomPath(), updates);
   }
 
   async function nextRound() {
@@ -894,7 +1075,7 @@ function initGame() {
   }
 
   // ──────────────────────────────────────────────────────────
-  // 🔒 SECURE HOLD-TO-REVEAL WORD LOGIC
+  // 🔒 SECURE HOLD-TO-REVEAL WORD LOGIC (Touch, Mouse, Spacebar)
   // ──────────────────────────────────────────────────────────
   function setupHoldToReveal() {
     const card = document.getElementById('hold-word-card');
@@ -903,7 +1084,7 @@ function initGame() {
     const shownEl  = document.getElementById('word-peek-shown');
 
     function onHoldStart(e) {
-      if (e.cancelable) e.preventDefault();
+      if (e && e.cancelable) e.preventDefault();
       card.classList.add('pressing');
       hiddenEl.classList.add('hidden');
       shownEl.classList.remove('hidden');
@@ -915,15 +1096,33 @@ function initGame() {
       hiddenEl.classList.remove('hidden');
     }
 
-    // Touch events for mobile
     card.addEventListener('touchstart', onHoldStart, { passive: false });
     card.addEventListener('touchend', onHoldEnd);
     card.addEventListener('touchcancel', onHoldEnd);
 
-    // Mouse events for desktop
     card.addEventListener('mousedown', onHoldStart);
     card.addEventListener('mouseup', onHoldEnd);
     card.addEventListener('mouseleave', onHoldEnd);
+
+    // Spacebar hold-to-peek when in Arena & not typing in an input
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && !e.repeat) {
+        const activeTag = document.activeElement?.tagName;
+        if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT') return;
+        const arenaActive = document.getElementById('screen-arena')?.classList.contains('active');
+        if (arenaActive) {
+          e.preventDefault();
+          onHoldStart();
+        }
+      }
+    });
+    document.addEventListener('keyup', (e) => {
+      if (e.code === 'Space') {
+        const activeTag = document.activeElement?.tagName;
+        if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT') return;
+        onHoldEnd();
+      }
+    });
   }
 
   // ──────────────────────────────────────────────────────────
@@ -931,6 +1130,31 @@ function initGame() {
   // ──────────────────────────────────────────────────────────
   function attachStaticListeners() {
     setupHoldToReveal();
+
+    const themeBtn = document.getElementById('btn-theme-toggle');
+    if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+
+    const soundBtn = document.getElementById('btn-sound-toggle');
+    if (soundBtn) soundBtn.addEventListener('click', toggleSound);
+
+    const rulesBtn = document.getElementById('btn-how-to-play');
+    if (rulesBtn) rulesBtn.addEventListener('click', () => document.getElementById('rules-modal')?.classList.remove('hidden'));
+
+    const rulesClose = document.getElementById('rules-close');
+    if (rulesClose) rulesClose.addEventListener('click', () => document.getElementById('rules-modal')?.classList.add('hidden'));
+
+    const rulesGotIt = document.getElementById('rules-got-it');
+    if (rulesGotIt) rulesGotIt.addEventListener('click', () => document.getElementById('rules-modal')?.classList.add('hidden'));
+
+    const rulesModal = document.getElementById('rules-modal');
+    if (rulesModal) rulesModal.addEventListener('click', (e) => {
+      if (e.target === rulesModal) rulesModal.classList.add('hidden');
+    });
+
+    const copyCodeBtn = document.getElementById('btn-copy-code');
+    if (copyCodeBtn) copyCodeBtn.addEventListener('click', () => {
+      copyTextToClipboard(ROOM_CODE).then(() => showToast(`Copied code: ${ROOM_CODE}`, 'success'));
+    });
 
     const shareBtn = document.getElementById('btn-share');
     if (shareBtn) shareBtn.addEventListener('click', shareRoom);
@@ -941,11 +1165,33 @@ function initGame() {
     const startBtn = document.getElementById('btn-start');
     if (startBtn) startBtn.addEventListener('click', startGame);
 
-    // Imposter Mode Radios (Host switch syncs to Firebase)
+    // Custom Word Toggle
+    const customToggleBtn = document.getElementById('btn-toggle-custom-word');
+    if (customToggleBtn) {
+      customToggleBtn.addEventListener('click', () => {
+        const box = document.getElementById('custom-word-box');
+        if (box) {
+          box.classList.toggle('hidden');
+          customToggleBtn.textContent = box.classList.contains('hidden')
+            ? '✨ + Use Custom Word for This Round'
+            : '✨ − Hide Custom Word';
+        }
+      });
+    }
+
+    // Imposter Mode & Clue Rounds Radios
     document.querySelectorAll('input[name="imposter-mode"]').forEach(radio => {
       radio.addEventListener('change', () => {
         if (currentRoom?.hostId === PLAYER_ID) {
           dbUpdate(roomPath(), { imposterMode: radio.value });
+        }
+      });
+    });
+
+    document.querySelectorAll('input[name="clue-rounds"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        if (currentRoom?.hostId === PLAYER_ID) {
+          dbUpdate(roomPath(), { totalClueRounds: Number(radio.value) });
         }
       });
     });
@@ -1044,7 +1290,7 @@ function initGame() {
     const baseUrl = window.location.origin + window.location.pathname.replace(/game\.html.*$/, '');
     const url = baseUrl + 'index.html?room=' + ROOM_CODE;
     copyTextToClipboard(url).then(() => {
-      showToast(`Link copied! Room: ${ROOM_CODE}`, 'success');
+      showToast(`Invite link copied! Room: ${ROOM_CODE}`, 'success');
     });
     if (navigator.share) {
       navigator.share({ title: 'Sync Room — ' + ROOM_CODE, text: `Join my Sync Room! Code: ${ROOM_CODE}`, url }).catch(() => {});
@@ -1065,7 +1311,7 @@ function initGame() {
       return `
         <div class="lb-item">
           <div class="lb-rank ${rankClass}">${rankLabel}</div>
-          <div class="avatar-bubble" style="width:28px;height:28px;margin-right:6px">${avatarSvg}</div>
+          <div class="avatar-bubble" style="width:30px;height:30px">${avatarSvg}</div>
           <div class="lb-info">
             <div class="lb-name">${esc(p.name)}${isMe ? ' <span class="me-badge">You</span>' : ''}</div>
           </div>
@@ -1087,7 +1333,6 @@ function initGame() {
 
   function objectToArray(obj) {
     if (!obj) return [];
-    // ONLY include real players who have a valid name! Exclude ghost accounts!
     return Object.entries(obj)
       .filter(([id, val]) => val && typeof val === 'object' && val.name && String(val.name).trim().length > 0)
       .map(([id, val]) => ({ id, ...val }));

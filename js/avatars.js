@@ -190,6 +190,104 @@ if (typeof window.ANIMAL_AVATARS === 'undefined') {
       <circle cx="34" cy="58" r="3.5" fill="#FBCFE8"/>
       <circle cx="66" cy="58" r="3.5" fill="#FBCFE8"/>
     </svg>`
+  },
+  {
+    id: "cat",
+    name: "Cat 🐱",
+    svg: `<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="50" cy="50" r="48" fill="#FEF3C7"/>
+      <!-- Ears -->
+      <polygon points="24,22 42,40 22,46" fill="#D97706"/>
+      <polygon points="76,22 58,40 78,46" fill="#D97706"/>
+      <polygon points="27,28 38,39 25,43" fill="#FDE68A"/>
+      <polygon points="73,28 62,39 75,43" fill="#FDE68A"/>
+      <!-- Face -->
+      <ellipse cx="50" cy="55" rx="27" ry="24" fill="#F59E0B"/>
+      <!-- Forehead stripes -->
+      <rect x="48" y="32" width="4" height="9" rx="2" fill="#B45309"/>
+      <rect x="41" y="34" width="3.5" height="7" rx="1.75" fill="#B45309"/>
+      <rect x="55.5" y="34" width="3.5" height="7" rx="1.75" fill="#B45309"/>
+      <!-- Muzzle -->
+      <ellipse cx="44" cy="61" rx="7" ry="5.5" fill="#FEF3C7"/>
+      <ellipse cx="56" cy="61" rx="7" ry="5.5" fill="#FEF3C7"/>
+      <!-- Nose -->
+      <polygon points="50,60 46.5,56 53.5,56" fill="#EC4899"/>
+      <!-- Eyes -->
+      <ellipse cx="38" cy="50" rx="3.2" ry="4" fill="#18181B"/>
+      <ellipse cx="62" cy="50" rx="3.2" ry="4" fill="#18181B"/>
+      <circle cx="39" cy="48.5" r="1.2" fill="#FFFFFF"/>
+      <circle cx="63" cy="48.5" r="1.2" fill="#FFFFFF"/>
+    </svg>`
+  },
+  {
+    id: "wolf",
+    name: "Wolf 🐺",
+    svg: `<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="50" cy="50" r="48" fill="#E0E7FF"/>
+      <!-- Ears -->
+      <polygon points="25,20 42,40 22,46" fill="#475569"/>
+      <polygon points="75,20 58,40 78,46" fill="#475569"/>
+      <polygon points="28,27 38,39 26,42" fill="#CBD5E1"/>
+      <polygon points="72,27 62,39 74,42" fill="#CBD5E1"/>
+      <!-- Face -->
+      <polygon points="50,79 22,46 34,34 66,34 78,46" fill="#64748B"/>
+      <!-- White Cheeks & Muzzle -->
+      <polygon points="50,79 25,49 50,53 75,49" fill="#F1F5F9"/>
+      <!-- Nose -->
+      <circle cx="50" cy="70" r="4" fill="#0F172A"/>
+      <!-- Sharp Eyes -->
+      <ellipse cx="38" cy="48" rx="3.5" ry="3.2" fill="#38BDF8"/>
+      <ellipse cx="62" cy="48" rx="3.5" ry="3.2" fill="#38BDF8"/>
+      <circle cx="38" cy="48" r="1.6" fill="#0F172A"/>
+      <circle cx="62" cy="48" r="1.6" fill="#0F172A"/>
+    </svg>`
+  },
+  {
+    id: "frog",
+    name: "Frog 🐸",
+    svg: `<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="50" cy="50" r="48" fill="#DCFCE7"/>
+      <!-- Popped Eye Bumps -->
+      <circle cx="34" cy="37" r="11" fill="#22C55E"/>
+      <circle cx="66" cy="37" r="11" fill="#22C55E"/>
+      <!-- Face -->
+      <ellipse cx="50" cy="57" rx="29" ry="22" fill="#22C55E"/>
+      <ellipse cx="50" cy="64" rx="23" ry="13" fill="#BBF7D0"/>
+      <!-- Eyes -->
+      <circle cx="34" cy="37" r="7" fill="#FFFFFF"/>
+      <circle cx="66" cy="37" r="7" fill="#FFFFFF"/>
+      <circle cx="34" cy="37" r="3.8" fill="#18181B"/>
+      <circle cx="66" cy="37" r="3.8" fill="#18181B"/>
+      <circle cx="35.5" cy="35.5" r="1.4" fill="#FFFFFF"/>
+      <circle cx="67.5" cy="35.5" r="1.4" fill="#FFFFFF"/>
+      <!-- Smile & Cheeks -->
+      <path d="M36 58 Q50 67 64 58" stroke="#15803D" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+      <circle cx="29" cy="57" r="4" fill="#86EFAC"/>
+      <circle cx="71" cy="57" r="4" fill="#86EFAC"/>
+    </svg>`
+  },
+  {
+    id: "penguin",
+    name: "Penguin 🐧",
+    svg: `<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="50" cy="50" r="48" fill="#E0F2FE"/>
+      <!-- Head -->
+      <ellipse cx="50" cy="54" rx="28" ry="28" fill="#1E293B"/>
+      <!-- White Face Mask -->
+      <circle cx="40" cy="50" r="12" fill="#FFFFFF"/>
+      <circle cx="60" cy="50" r="12" fill="#FFFFFF"/>
+      <ellipse cx="50" cy="64" rx="18" ry="15" fill="#FFFFFF"/>
+      <!-- Eyes -->
+      <circle cx="39" cy="49" r="3.2" fill="#0F172A"/>
+      <circle cx="61" cy="49" r="3.2" fill="#0F172A"/>
+      <circle cx="40" cy="47.5" r="1.1" fill="#FFFFFF"/>
+      <circle cx="62" cy="47.5" r="1.1" fill="#FFFFFF"/>
+      <!-- Beak -->
+      <polygon points="50,62 43,54 57,54" fill="#F59E0B"/>
+      <!-- Rosy Cheeks -->
+      <circle cx="31" cy="56" r="3.5" fill="#FDA4AF"/>
+      <circle cx="69" cy="56" r="3.5" fill="#FDA4AF"/>
+    </svg>`
   }
   ];
 }

@@ -3,16 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#6366F1">
+  <meta name="theme-color" content="#5B5AF7">
   <title>Sync Room</title>
   <link rel="manifest" href="manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Malayalam:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/main.css?v=115">
-  <link rel="stylesheet" href="css/game.css?v=115">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@600;700;800&family=Noto+Sans+Malayalam:wght@400;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    (function() {
+      var saved = localStorage.getItem('syncroom_theme');
+      if (saved === 'dark' || saved === 'light') {
+        document.documentElement.setAttribute('data-theme', saved);
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="css/main.css?v=200">
+  <link rel="stylesheet" href="css/game.css?v=200">
 </head>
-<body>
+<body class="page">
 
 <!-- ── Toast ──────────────────────────────────────────────── -->
 <div id="toast-container"></div>
@@ -26,14 +34,14 @@
       <span class="app-logo-icon">◈</span>
       <span>Sync Room</span>
     </a>
-    <div class="flex items-center gap-2">
-      <span class="room-code-pill" id="header-room-code">----</span>
-      <button class="btn btn-ghost btn--sm" id="btn-share" title="Share room link">↗ Share</button>
-      <button class="btn btn-ghost btn--sm text-sub" id="btn-leave-room" title="Exit room">🚪 Exit</button>
+    <div class="flex items-center gap-1">
+      <span class="room-code-pill" id="header-room-code" title="Click to copy invite link">----</span>
+      <button class="btn btn-ghost btn-icon" id="btn-sound-toggle" title="Toggle turn sound">🔊</button>
+      <button class="btn btn-ghost btn-icon" id="btn-how-to-play" title="How to Play">❓</button>
+      <button class="btn btn-ghost btn-icon" id="btn-theme-toggle" title="Toggle Light/Dark theme">🌙</button>
+      <button class="btn btn-ghost btn--sm text-sub" id="btn-leave-room" title="Exit room">Exit</button>
     </div>
   </header>
-
-  <!-- Screens -->
 
   <!-- ── 1. LOBBY ──────────────────────────────────────────── -->
   <div id="screen-lobby" class="screen animate-in active">
@@ -41,9 +49,23 @@
       <div class="flex items-center justify-between mb-4">
         <div>
           <h2>Waiting Room</h2>
-          <p class="text-sm text-sub mt-1">Share the code to invite your teammates</p>
+          <p class="text-sm text-sub mt-1">Invite teammates before starting</p>
         </div>
-        <span class="badge badge-neutral" id="lobby-player-count">0 joined</span>
+        <span class="badge badge-accent" id="lobby-player-count">0 joined</span>
+      </div>
+
+      <!-- Invite Banner -->
+      <div class="invite-banner mb-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="text-xs font-bold text-sub" style="letter-spacing:.08em">ROOM CODE</div>
+            <div class="invite-code-big" id="lobby-invite-code">----</div>
+          </div>
+          <div class="invite-actions">
+            <button type="button" class="btn btn-secondary btn--sm" id="btn-copy-code">📋 Code</button>
+            <button type="button" class="btn btn-primary btn--sm" id="btn-share">↗ Invite</button>
+          </div>
+        </div>
       </div>
 
       <!-- 👑 HOST EXCLUSIVE SETTINGS (Hidden from players) -->
@@ -56,8 +78,8 @@
         </div>
 
         <!-- Imposter Mode Selector -->
-        <div class="setting-item mb-3">
-          <label class="text-xs font-bold text-sub mb-2" style="display:block">IMPOSTER MODE</label>
+        <div class="setting-item mb-4">
+          <label class="text-xs font-bold text-sub mb-2" style="display:block;letter-spacing:.05em">IMPOSTER MODE</label>
           <div class="mode-toggle-group">
             <label class="mode-radio-label">
               <input type="radio" name="imposter-mode" value="similar" checked>
@@ -78,9 +100,28 @@
           </div>
         </div>
 
+        <!-- Clue Rounds Selector -->
+        <div class="setting-item mb-4">
+          <label class="text-xs font-bold text-sub mb-2" style="display:block;letter-spacing:.05em">CLUE ROUNDS</label>
+          <div class="rounds-selector">
+            <label class="round-pill-label">
+              <input type="radio" name="clue-rounds" value="1">
+              <span class="round-pill-box">1 Round</span>
+            </label>
+            <label class="round-pill-label">
+              <input type="radio" name="clue-rounds" value="2" checked>
+              <span class="round-pill-box">2 Rounds</span>
+            </label>
+            <label class="round-pill-label">
+              <input type="radio" name="clue-rounds" value="3">
+              <span class="round-pill-box">3 Rounds</span>
+            </label>
+          </div>
+        </div>
+
         <!-- Category Picker -->
-        <div class="setting-item">
-          <label class="text-xs font-bold text-sub mb-1" style="display:block">CATEGORY</label>
+        <div class="setting-item mb-3">
+          <label class="text-xs font-bold text-sub mb-1" style="display:block;letter-spacing:.05em">WORD CATEGORY</label>
           <select id="host-category-select" class="input category-select">
             <option value="ALL">🎲 All Categories (Random)</option>
             <option value="Food">🍛 Food</option>
@@ -88,7 +129,20 @@
             <option value="Animals">🐘 Animals</option>
             <option value="Places">🏖️ Places</option>
             <option value="Objects">📦 Objects</option>
+            <option value="Office">💼 Office &amp; Tech</option>
           </select>
+        </div>
+
+        <!-- Optional Custom Word -->
+        <div>
+          <button type="button" class="custom-word-toggle" id="btn-toggle-custom-word">
+            ✨ + Use Custom Word for This Round
+          </button>
+          <div class="custom-word-box hidden" id="custom-word-box">
+            <input type="text" id="custom-main-word" class="input" placeholder="Crew Word (e.g. Chai)" maxlength="32">
+            <input type="text" id="custom-similar-word" class="input" placeholder="Imposter Word (for Similar Mode, e.g. Coffee)" maxlength="32">
+            <span class="text-xs text-muted">Leave blank to pick automatically from library.</span>
+          </div>
         </div>
       </div>
 
@@ -96,7 +150,7 @@
       <div class="card card-body mb-4">
         <div class="flex items-center justify-between mb-3">
           <h3>Participants</h3>
-          <span class="text-xs text-muted">Clue Turn Order</span>
+          <span class="text-xs text-muted">Shuffled on start</span>
         </div>
         <div id="lobby-players" class="player-list"></div>
       </div>
@@ -104,9 +158,9 @@
       <!-- Start button (host) / waiting (guest) -->
       <div id="host-start-wrap" class="hidden">
         <button class="btn btn-primary btn--full btn--lg" id="btn-start">
-          Start Game
+          Start Game →
         </button>
-        <p class="text-xs text-muted text-center mt-3">Need at least 3 players to start</p>
+        <p class="text-xs text-muted text-center mt-2">Need at least 3 players to start</p>
       </div>
       <div id="guest-waiting" class="hidden">
         <div class="waiting-card">
@@ -123,25 +177,25 @@
       
       <!-- Top info bar -->
       <div class="arena-header mb-3">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-2">
             <span class="badge badge-accent" id="arena-round-badge">Round 1 of 2</span>
           </div>
-          <div class="flex items-center gap-2">
-            <button class="btn btn-ghost btn--sm text-xs text-sub hidden" id="btn-host-skip-turn" title="Skip current player if stuck">Skip Turn ⏭️</button>
+          <div class="flex items-center gap-1">
+            <button class="btn btn-ghost btn--sm text-xs text-sub hidden" id="btn-host-skip-turn" title="Skip current player if stuck">Skip ⏭️</button>
             <button class="btn btn-ghost btn--sm text-xs text-danger hidden" id="btn-host-force-vote">Vote Now →</button>
             <button class="btn btn-ghost btn--sm text-xs" id="btn-arena-back-lobby">🏠 Lobby</button>
           </div>
         </div>
       </div>
 
-      <!-- 🔒 SECURE HOLD-TO-REVEAL WORD CARD -->
-      <div class="secret-word-container mb-4">
+      <!-- 🔒 SECURE HOLD-TO-REVEAL VAULT CARD -->
+      <div class="secret-word-container mb-3">
         <div class="secret-word-card" id="hold-word-card">
           <div class="word-peek-unrevealed" id="word-peek-hidden">
-            <span class="lock-icon">🔒</span>
+            <div class="lock-badge">🔒</div>
             <span class="hold-text">Hold to Peek Secret Word</span>
-            <span class="hold-subtext">Release to immediately hide from prying eyes</span>
+            <span class="hold-subtext">Press &amp; hold (or hold Spacebar) · Release to hide</span>
           </div>
           <div class="word-peek-revealed hidden" id="word-peek-shown">
             <div class="revealed-tag" id="arena-revealed-tag">YOUR SECRET WORD</div>
@@ -152,21 +206,22 @@
         </div>
       </div>
 
-      <!-- Turn Order Strip -->
+      <!-- Turn Order Stepper -->
       <div class="turn-strip-card card card-body--sm mb-3">
-        <div class="turn-strip-title text-xs text-muted mb-2">Turn Order:</div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold text-muted" style="letter-spacing:.05em">TURN ORDER</span>
+          <span class="text-xs text-muted" id="turn-progress-label">0 / 0</span>
+        </div>
         <div class="turn-player-strip" id="turn-players-strip"></div>
       </div>
 
       <!-- Clue Chat Area -->
       <div class="chat-card card mb-3">
         <div class="chat-header">
-          <span class="text-xs font-bold text-sub">CLUE LOG</span>
+          <span class="text-xs font-bold text-sub" style="letter-spacing:.05em">CLUE LOG</span>
           <span class="text-xs text-muted" id="turn-status-banner">Waiting...</span>
         </div>
-        <div class="chat-messages" id="clue-chat-messages">
-          <!-- Messages will stream here -->
-        </div>
+        <div class="chat-messages" id="clue-chat-messages"></div>
 
         <!-- Live Typing indicator bar with 3 dots & Avatar -->
         <div class="typing-indicator-bar hidden" id="typing-indicator-bar">
@@ -177,15 +232,18 @@
 
         <!-- Clue Input Bar -->
         <form class="chat-input-bar" id="clue-form">
-          <input
-            type="text"
-            id="clue-input"
-            class="input clue-text-input"
-            placeholder="Waiting for your turn..."
-            maxlength="60"
-            autocomplete="off"
-            disabled
-          >
+          <div class="clue-input-wrap">
+            <input
+              type="text"
+              id="clue-input"
+              class="input clue-text-input"
+              placeholder="Waiting for your turn..."
+              maxlength="60"
+              autocomplete="off"
+              disabled
+            >
+            <span class="clue-char-count" id="clue-char-count">0/60</span>
+          </div>
           <button type="submit" class="btn btn-primary btn--sm" id="btn-send-clue" disabled>Send</button>
         </form>
       </div>
@@ -196,22 +254,25 @@
   <!-- ── 3. VOTING SCREEN ─────────────────────────────────── -->
   <div id="screen-voting" class="screen animate-in hidden">
     <div class="container py-6">
-      <div class="text-center mb-5">
+      <div class="text-center mb-4">
         <span class="badge badge-danger mb-2">Voting Phase</span>
         <h2>Who is the Imposter?</h2>
-        <p class="text-sm text-sub mt-1">Review the clues above and cast your vote</p>
+        <p class="text-sm text-sub mt-1">Review all clues and cast your suspicion vote</p>
       </div>
 
-      <!-- Mini clue review toggle -->
+      <!-- Mini clue review -->
       <div class="card card-body--sm mb-4">
         <div class="flex items-center justify-between mb-2">
-          <span class="text-xs font-bold text-muted">ROUND CLUES</span>
+          <span class="text-xs font-bold text-muted" style="letter-spacing:.05em">ROUND CLUES</span>
         </div>
         <div id="voting-clues-summary" class="voting-clues-log"></div>
       </div>
 
       <div id="vote-list" class="vote-list mb-4"></div>
 
+      <div class="vote-progress-track">
+        <div class="vote-progress-fill" id="vote-progress-fill" style="width:0%"></div>
+      </div>
       <div class="text-xs text-muted text-center mb-4" id="vote-status">
         Waiting for votes…
       </div>
@@ -239,12 +300,12 @@
   <div id="screen-results" class="screen animate-in hidden">
     <div class="container py-6">
       <div class="text-center mb-4">
-        <span class="badge badge-neutral mb-2" id="results-round-badge">Results</span>
+        <span class="badge badge-neutral mb-2" id="results-round-badge">Round Results</span>
       </div>
 
       <!-- Eliminated reveal card -->
       <div class="reveal-card mb-4" id="reveal-card">
-        <div class="reveal-label">Most Voted Player</div>
+        <div class="reveal-label">Verdict</div>
         <div class="reveal-name" id="reveal-name">–</div>
         <div class="reveal-verdict" id="reveal-verdict"></div>
       </div>
@@ -252,14 +313,20 @@
       <!-- Word reveal -->
       <div class="words-reveal-row mb-4" id="words-reveal">
         <div class="word-reveal-item">
-          <div class="text-xs text-muted mb-1">Everyone had</div>
+          <div class="text-xs text-muted mb-1">Crew Word</div>
           <div class="word-reveal-val ml-text" id="result-main-word">–</div>
         </div>
-        <div class="word-reveal-divider">vs</div>
+        <div class="word-reveal-divider">VS</div>
         <div class="word-reveal-item">
-          <div class="text-xs text-muted mb-1">Imposter had</div>
+          <div class="text-xs text-muted mb-1">Imposter Had</div>
           <div class="word-reveal-val word-reveal-val--imposter ml-text" id="result-imposter-word">–</div>
         </div>
+      </div>
+
+      <!-- Vote Breakdown ("Who voted for whom") -->
+      <div class="card card-body mb-4" id="vote-breakdown-card">
+        <h3 class="mb-3">🗳️ Who Voted For Whom</h3>
+        <div id="vote-breakdown-list" class="vote-breakdown-list"></div>
       </div>
 
       <!-- Score changes this round -->
@@ -289,9 +356,9 @@
   <div id="screen-ended" class="screen animate-in hidden">
     <div class="container py-8">
       <div class="text-center mb-6">
-        <div style="font-size:3rem;margin-bottom:12px">🎉</div>
+        <div style="font-size:3rem;margin-bottom:10px">🎉</div>
         <h1>Game Over!</h1>
-        <p class="text-sub mt-2">Thanks for playing Sync Room</p>
+        <p class="text-sub mt-2">Final standings for this session</p>
       </div>
       <div class="card card-body mb-6">
         <h3 class="mb-3">🏆 Final Standings</h3>
@@ -315,13 +382,48 @@
   </div>
 </div>
 
+<!-- ── How to Play Modal ───────────────────────────────── -->
+<div class="modal-overlay hidden" id="rules-modal">
+  <div class="modal">
+    <div class="flex items-center justify-between mb-2">
+      <h2>How to Play Sync Room</h2>
+      <button class="btn btn-ghost btn-icon" id="rules-close">✕</button>
+    </div>
+    <p class="text-sm text-sub">A fast social word deduction game for 3+ players.</p>
+    <div class="rules-list">
+      <div class="rule-step">
+        <div class="rule-num">1</div>
+        <div class="rule-body">
+          <strong>Hold to Peek Your Word</strong>
+          <span>Hold the vault card (or Spacebar) to view your word safely. Release immediately to hide from nearby eyes.</span>
+        </div>
+      </div>
+      <div class="rule-step">
+        <div class="rule-num">2</div>
+        <div class="rule-body">
+          <strong>Drop Subtle Clues</strong>
+          <span>Take turns typing a short clue. In <em>Similar Word</em> mode, nobody knows who has the slightly different word!</span>
+        </div>
+      </div>
+      <div class="rule-step">
+        <div class="rule-num">3</div>
+        <div class="rule-body">
+          <strong>Vote &amp; Score</strong>
+          <span>Voting for the real Imposter earns <strong>+2 pts</strong> (even on ties/misses). If the Imposter escapes, they earn <strong>+3 pts</strong>!</span>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary btn--full" id="rules-got-it">Got it</button>
+  </div>
+</div>
+
 <!-- Firebase SDKs -->
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-<script src="js/firebase-config.js?v=115"></script>
-<script src="js/avatars.js?v=115"></script>
-<script src="js/words.js?v=115"></script>
-<script src="js/game.js?v=115"></script>
+<script src="js/firebase-config.js?v=200"></script>
+<script src="js/avatars.js?v=200"></script>
+<script src="js/words.js?v=200"></script>
+<script src="js/game.js?v=200"></script>
 <script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations().then(function(regs) {

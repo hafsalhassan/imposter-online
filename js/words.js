@@ -70,7 +70,19 @@ const WORD_LIBRARY = [
   { id: 54, word: "Kindi (Water Vessel)", similarWord: "Koppa", category: "Objects", difficulty: "hard" },
   { id: 55, word: "Charkha", similarWord: "Loom", category: "Objects", difficulty: "medium" },
   { id: 56, word: "Coconut Scraper", similarWord: "Aruvamanai", category: "Objects", difficulty: "easy" },
-  { id: 57, word: "Puttu Maker", similarWord: "Idli Steamer", category: "Objects", difficulty: "easy" }
+  { id: 57, word: "Puttu Maker", similarWord: "Idli Steamer", category: "Objects", difficulty: "easy" },
+
+  // Office & Tech
+  { id: 58, word: "Standup Meeting", similarWord: "Sprint Retro", category: "Office", difficulty: "easy" },
+  { id: 59, word: "Coffee Machine", similarWord: "Water Cooler", category: "Office", difficulty: "easy" },
+  { id: 60, word: "Deadline", similarWord: "Launch Day", category: "Office", difficulty: "easy" },
+  { id: 61, word: "Mechanical Keyboard", similarWord: "Trackpad", category: "Office", difficulty: "medium" },
+  { id: 62, word: "Slack Ping", similarWord: "Email Thread", category: "Office", difficulty: "easy" },
+  { id: 63, word: "Sticky Note", similarWord: "Whiteboard", category: "Office", difficulty: "easy" },
+  { id: 64, word: "Deploy on Friday", similarWord: "Hotfix", category: "Office", difficulty: "medium" },
+  { id: 65, word: "Figma", similarWord: "Canva", category: "Office", difficulty: "easy" },
+  { id: 66, word: "Dark Mode", similarWord: "High Contrast", category: "Office", difficulty: "easy" },
+  { id: 67, word: "Weekend Overtime", similarWord: "WFH", category: "Office", difficulty: "easy" }
 ];
 
 function shuffleArray(arr) {
